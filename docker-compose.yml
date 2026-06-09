@@ -1,0 +1,104 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: royal_furniture_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations_sql:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pgbouncer:
+    image: edoburu/pgbouncer:1.22.0
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/royal_furniture_db
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 100
+    ports:
+      - "6432:5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env.example
+    environment:
+      DJANGO_ENV: development
+      DB_HOST: pgbouncer
+      DB_PORT: 5432
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+    volumes:
+      - ./media:/app/media
+      - ./logs:/app/logs
+    ports:
+      - "8000:8000"
+    depends_on:
+      - pgbouncer
+      - redis
+    command: >
+      sh -c "python manage.py migrate --run-syncdb &&
+             gunicorn config.wsgi:application -c deploy/gunicorn/gunicorn.conf.py"
+
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env.example
+    environment:
+      DB_HOST: pgbouncer
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+    depends_on:
+      - backend
+      - redis
+    command: celery -A config worker -l info -c 4
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/1
+    depends_on:
+      - celery
+      - redis
+    command: celery -A config beat -l info
+
+  channels:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8001:8001"
+    depends_on:
+      - backend
+      - redis
+    command: daphne -b 0.0.0.0 -p 8001 config.asgi:application
+
+volumes:
+  postgres_data:
+  redis_data:
