@@ -20,6 +20,7 @@ class JWTAuthenticationMiddleware:
     def __call__(self, request: HttpRequest) -> HttpResponse:
         request.user_id = None
         request.user_role = None
+        request.customer_id = None
         request.jwt_payload = None
 
         auth_header = request.META.get("HTTP_AUTHORIZATION", "")
@@ -30,5 +31,6 @@ class JWTAuthenticationMiddleware:
                 request.jwt_payload = payload
                 request.user_id = payload.get("user_id")
                 request.user_role = payload.get("role")
+                request.customer_id = payload.get("customer_id")
 
         return self.get_response(request)

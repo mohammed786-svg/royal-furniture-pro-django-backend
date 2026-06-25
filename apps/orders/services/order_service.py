@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
+from psycopg2.extras import Json
+
 from apps.customers.repositories.address_repository import address_repository
 from apps.customers.repositories.customer_repository import customer_repository
 from apps.orders.repositories.order_history_repository import order_history_repository
@@ -366,7 +368,7 @@ class OrderService:
                 "to_status": status_code,
                 "changed_by": created_by,
                 "change_reason": to_db_text(payload.get("changeReason") or "Manual order created"),
-                "metadata": {"source": "admin_manual"},
+                "metadata": Json({"source": "admin_manual"}),
                 "changed_at": datetime.now(),
             }, conn=conn)
 
@@ -438,9 +440,17 @@ class OrderService:
                     "to_status": to_status,
                     "changed_by": changed_by,
                     "change_reason": to_db_text(payload.get("changeReason")),
-                    "metadata": payload.get("metadata") or {},
+                    "metadata": Json(payload.get("metadata") or {}),
                     "changed_at": datetime.now(),
                 }, conn=conn)
+                if to_status == "CANCELLED":
+                    from apps.storefront.services.inventory_stock_service import inventory_stock_service
+
+                    inventory_stock_service.restore_for_order(
+                        order_id,
+                        performed_by=changed_by,
+                        conn=conn,
+                    )
             if payload.get("tracking"):
                 tracking = payload["tracking"]
                 order_tracking_repository.create({

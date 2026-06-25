@@ -82,6 +82,17 @@ class CategoryRepository:
         """
         return select_one(sql, [category_id])
 
+    def fetch_by_slug(self, slug: str) -> Optional[dict[str, Any]]:
+        sql = f"""
+            SELECT *
+            FROM {self.schema}.{self.table}
+            WHERE slug = %s
+              AND is_deleted = FALSE
+              AND is_visible = TRUE
+              AND is_active = TRUE
+        """
+        return select_one(sql, [slug])
+
     def slug_exists(self, slug: str, *, exclude_id: Optional[int] = None) -> bool:
         sql = f"""
             SELECT category_id

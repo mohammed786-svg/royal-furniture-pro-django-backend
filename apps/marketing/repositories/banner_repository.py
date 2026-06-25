@@ -118,5 +118,53 @@ class BannerRepository:
         """
         return update_query(sql, [banner_id]) > 0
 
+    def list_active_by_position_code(self, position_code: str) -> list[dict[str, Any]]:
+        sql = f"""
+            SELECT
+                b.banner_id,
+                b.title,
+                b.subtitle,
+                b.image_url,
+                b.mobile_image_url,
+                b.link_url,
+                b.link_type,
+                b.display_order,
+                b.starts_at,
+                b.ends_at,
+                b.updated_at,
+                b.epoch,
+                bp.position_code,
+                bp.max_banners
+            FROM {self.schema}.{self.table} b
+            INNER JOIN {self.schema}.banner_positiontbl bp
+                ON bp.banner_position_id = b.banner_position_id
+            WHERE b.is_deleted = FALSE
+              AND b.is_active = TRUE
+              AND bp.is_deleted = FALSE
+              AND bp.is_active = TRUE
+              AND bp.position_code = %s
+              AND (b.starts_at IS NULL OR b.starts_at <= NOW())
+              AND (b.ends_at IS NULL OR b.ends_at >= NOW())
+            ORDER BY b.display_order ASC, b.banner_id ASC
+        """
+        rows = select_query(sql, [position_code])
+        if not rows:
+            return rows
+        max_banners = int(rows[0].get("max_banners") or 5)
+        return rows[:max_banners]
+
+    def fetch_version_for_position(self, position_code: str) -> str:
+        sql = f"""
+            SELECT COALESCE(MAX(b.epoch), 0) AS version_epoch
+            FROM {self.schema}.{self.table} b
+            INNER JOIN {self.schema}.banner_positiontbl bp
+                ON bp.banner_position_id = b.banner_position_id
+            WHERE b.is_deleted = FALSE
+              AND bp.position_code = %s
+        """
+        row = select_one(sql, [position_code])
+        epoch = float(row["version_epoch"]) if row else 0.0
+        return f"{epoch:.6f}"
+
 
 banner_repository = BannerRepository()

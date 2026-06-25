@@ -1691,6 +1691,7 @@ ON CONFLICT (status_code) DO NOTHING;
 
 INSERT INTO royal.banner_positiontbl (position_code, position_name) VALUES
     ('HOME_HERO', 'Homepage Hero'),
+    ('HOME_PROMO', 'Homepage Promo Strip'),
     ('HOME_OFFER', 'Homepage Offer Strip'),
     ('CATEGORY_TOP', 'Category Page Top'),
     ('CATEGORY_SIDEBAR', 'Category Sidebar')

@@ -4,6 +4,7 @@ from apps.categories.views import (
     CatalogOptionsView,
     CategoryDetailView,
     CategoryListCreateView,
+    NavbarView,
     SubCategoryDetailView,
     SubCategoryListCreateView,
     UnderSubCategoryDetailView,
@@ -11,6 +12,7 @@ from apps.categories.views import (
 )
 
 urlpatterns = [
+    path("navbar/", NavbarView.as_view(), name="catalog-navbar"),
     path("options/", CatalogOptionsView.as_view(), name="catalog-options"),
     path("categories/", CategoryListCreateView.as_view(), name="category-list"),
     path("categories/<int:category_id>/", CategoryDetailView.as_view(), name="category-detail"),

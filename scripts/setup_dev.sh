@@ -11,3 +11,6 @@ cp -n .env.example .env 2>/dev/null || true
 mkdir -p logs media/products media/categories media/banners media/payments media/customers media/documents
 python manage.py migrate --run-syncdb
 echo "Development setup complete."
+echo ""
+echo "Optional — load Royal Oak–style demo catalog + images:"
+echo "  python scripts/seed_storefront_demo.py --force"

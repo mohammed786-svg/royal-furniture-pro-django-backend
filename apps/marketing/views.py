@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 
 from apps.marketing.services.banner_position_service import banner_position_service
 from apps.marketing.services.banner_service import banner_service
+from apps.marketing.services.storefront_banner_service import storefront_banner_service
 from apps.marketing.services.cms_page_service import cms_page_service
 from apps.marketing.services.coupon_service import coupon_service
 from apps.marketing.services.faq_service import faq_service
@@ -156,6 +157,19 @@ class BannerDetailView(APIView):
         _require_admin(request)
         banner_service.delete_banner(banner_id)
         return APIResponse.success(message="Banner deleted", endpoint=request.path)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class HeroBannersView(APIView):
+    """Public homepage hero banners — cached in Redis."""
+
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request: Request):
+        position_code = (request.query_params.get("position") or "HOME_HERO").strip().upper()
+        data = storefront_banner_service.get_banners_for_position(position_code)
+        return APIResponse.success(data=data, endpoint=request.path)
 
 
 @method_decorator(csrf_exempt, name="dispatch")

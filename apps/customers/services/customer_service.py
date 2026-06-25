@@ -111,8 +111,9 @@ class CustomerService:
 
             profile = payload.get("profile")
             if profile:
+                dob = profile.get("dateOfBirth")
                 customer_repository.upsert_profile(customer_id, {
-                    "date_of_birth": profile.get("dateOfBirth"),
+                    "date_of_birth": dob if dob not in ("", None) else None,
                     "gender": to_db_text(profile.get("gender")),
                     "profile_image": to_db_text(profile.get("profileImage")),
                     "preferences": profile.get("preferences") or {},
@@ -147,7 +148,8 @@ class CustomerService:
             if profile:
                 profile_updates: dict[str, Any] = {}
                 if "dateOfBirth" in profile:
-                    profile_updates["date_of_birth"] = profile.get("dateOfBirth")
+                    dob = profile.get("dateOfBirth")
+                    profile_updates["date_of_birth"] = dob if dob not in ("", None) else None
                 if "gender" in profile:
                     profile_updates["gender"] = to_db_text(profile.get("gender"))
                 if "profileImage" in profile:

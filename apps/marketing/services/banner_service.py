@@ -5,6 +5,8 @@ from typing import Any, Optional
 
 from apps.marketing.repositories.banner_repository import banner_repository
 from core.database import select_one
+from core.cache.cache_keys import CacheKeys
+from core.cache.cache_manager import cache_manager
 from core.exceptions.base import NotFoundException, ValidationException
 from core.helpers.text import from_db_text, save_base64_image, to_db_text
 
@@ -66,6 +68,24 @@ def _maybe_image(value: Any, *, prefix: str) -> str:
 
 class BannerService:
     schema = "royal"
+
+    def _invalidate_banner_cache(self, position_id: int | None = None) -> None:
+        if position_id:
+            sql = f"""
+                SELECT position_code
+                FROM {self.schema}.banner_positiontbl
+                WHERE banner_position_id = %s AND is_deleted = FALSE
+            """
+            row = select_one(sql, [position_id])
+            if row and row.get("position_code"):
+                cache_manager.delete(CacheKeys.banners(str(row["position_code"])))
+                return
+        cache_manager.delete_pattern(f"{CacheKeys.PREFIX}:banners:*")
+        try:
+            from apps.storefront.services.home_service import storefront_home_service
+            storefront_home_service.invalidate_homepage_cache()
+        except Exception:
+            pass
 
     def _serialize(self, row: dict[str, Any]) -> dict[str, Any]:
         category_id = row.get("category_id")
@@ -141,6 +161,7 @@ class BannerService:
             "is_active": bool(payload.get("isActive", True)),
         })
         detail = banner_repository.fetch_by_id(int(row["banner_id"]))
+        self._invalidate_banner_cache(position_id)
         return self._serialize(detail or row)
 
     def update_banner(self, banner_id: int, payload: dict[str, Any]) -> dict[str, Any]:
@@ -189,11 +210,17 @@ class BannerService:
         row = banner_repository.update(banner_id, updates)
         if not row:
             raise NotFoundException("Banner not found")
+        position_id = int(updates.get("banner_position_id") or existing["banner_position_id"])
+        self._invalidate_banner_cache(position_id)
         return self._serialize(row)
 
     def delete_banner(self, banner_id: int) -> None:
+        existing = banner_repository.fetch_by_id(banner_id)
+        if not existing:
+            raise NotFoundException("Banner not found")
         if not banner_repository.soft_delete(banner_id):
             raise NotFoundException("Banner not found")
+        self._invalidate_banner_cache(int(existing["banner_position_id"]))
 
 
 banner_service = BannerService()

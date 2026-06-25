@@ -10,6 +10,7 @@ from apps.marketing.views import (
     CouponListCreateView,
     FaqDetailView,
     FaqListCreateView,
+    HeroBannersView,
     MarketingMetaOptionsView,
     TestimonialDetailView,
     TestimonialListCreateView,
@@ -17,6 +18,7 @@ from apps.marketing.views import (
 
 urlpatterns = [
     path("meta-options/", MarketingMetaOptionsView.as_view(), name="marketing-meta-options"),
+    path("hero-banners/", HeroBannersView.as_view(), name="marketing-hero-banners"),
     path("coupons/", CouponListCreateView.as_view(), name="coupon-list"),
     path("coupons/<int:coupon_id>/", CouponDetailView.as_view(), name="coupon-detail"),
     path("banners/", BannerListCreateView.as_view(), name="banner-list"),

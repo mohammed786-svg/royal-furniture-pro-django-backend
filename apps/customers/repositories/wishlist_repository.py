@@ -82,6 +82,86 @@ class WishlistRepository:
         """
         return select_one(sql, [wishlist_id])
 
+    def list_by_customer(self, customer_id: int) -> list[dict[str, Any]]:
+        sql = f"""
+            SELECT
+                w.*,
+                p.name AS product_name,
+                p.slug AS product_slug,
+                p.sale_price AS product_sale_price,
+                p.base_price AS product_base_price,
+                p.mrp AS product_mrp,
+                (
+                    SELECT pi.image_url
+                    FROM {self.schema}.product_imagestbl pi
+                    WHERE pi.product_id = p.product_id
+                      AND pi.is_deleted = FALSE
+                      AND pi.is_active = TRUE
+                    ORDER BY pi.is_primary DESC, pi.display_order ASC
+                    LIMIT 1
+                ) AS product_image_url
+            FROM {self.schema}.{self.table} w
+            INNER JOIN {self.schema}.producttbl p ON p.product_id = w.product_id
+            WHERE w.customer_id = %s
+              AND w.is_deleted = FALSE
+              AND w.is_active = TRUE
+              AND p.is_deleted = FALSE
+            ORDER BY w.created_at DESC
+        """
+        return select_query(sql, [customer_id])
+
+    def fetch_by_customer_product(
+        self,
+        customer_id: int,
+        product_id: int,
+        *,
+        conn=None,
+    ) -> Optional[dict[str, Any]]:
+        sql = f"""
+            SELECT w.*
+            FROM {self.schema}.{self.table} w
+            WHERE w.customer_id = %s
+              AND w.product_id = %s
+            ORDER BY w.wishlist_id DESC
+            LIMIT 1
+        """
+        return select_one(sql, [customer_id, product_id], conn=conn)
+
+    def create(
+        self,
+        data: dict[str, Any],
+        *,
+        conn=None,
+    ) -> dict[str, Any]:
+        from core.database.raw_queries import execute
+
+        sql = f"""
+            INSERT INTO {self.schema}.{self.table}
+                (customer_id, session_id, product_id, product_variant_id, is_guest, is_active)
+            VALUES (%s, %s, %s, %s, %s, TRUE)
+            RETURNING *
+        """
+        rows = execute(sql, list(data.values()), conn=conn, fetch=True)
+        return rows[0] if rows else {}
+
+    def reactivate(self, wishlist_id: int, *, conn=None) -> None:
+        from core.database.raw_queries import execute
+
+        sql = f"""
+            UPDATE {self.schema}.{self.table}
+            SET is_deleted = FALSE, is_active = TRUE, updated_at = NOW()
+            WHERE wishlist_id = %s
+        """
+        execute(sql, [wishlist_id], conn=conn, fetch=False)
+
+    def soft_delete_by_product(self, customer_id: int, product_id: int) -> bool:
+        sql = f"""
+            UPDATE {self.schema}.{self.table}
+            SET is_deleted = TRUE, is_active = FALSE, updated_at = NOW()
+            WHERE customer_id = %s AND product_id = %s AND is_deleted = FALSE
+        """
+        return update_query(sql, [customer_id, product_id]) > 0
+
     def soft_delete(self, wishlist_id: int) -> bool:
         sql = f"""
             UPDATE {self.schema}.{self.table}

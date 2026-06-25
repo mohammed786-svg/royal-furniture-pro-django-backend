@@ -7,6 +7,7 @@ from rest_framework.request import Request
 from rest_framework.views import APIView
 
 from apps.categories.services.category_service import category_service
+from apps.categories.services.navbar_service import navbar_service
 from core.exceptions.base import AuthenticationException
 from core.pagination import PaginationParams
 from core.responses.formatter import APIResponse
@@ -164,6 +165,18 @@ class UnderSubCategoryDetailView(APIView):
         _require_admin(request)
         category_service.delete_under_sub_category(under_sub_category_id)
         return APIResponse.success(message="Under sub-category deleted", endpoint=request.path)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class NavbarView(APIView):
+    """Public storefront navbar tree — cached in Redis."""
+
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request: Request):
+        data = navbar_service.get_navbar_tree()
+        return APIResponse.success(data=data, endpoint=request.path)
 
 
 @method_decorator(csrf_exempt, name="dispatch")

@@ -127,6 +127,93 @@ class ProductRepository:
         """
         return select_one(sql, [product_id])
 
+    def fetch_by_slug(self, slug: str) -> Optional[dict[str, Any]]:
+        sql = f"""
+            SELECT
+                p.*,
+                c.name AS category_name,
+                c.slug AS category_slug,
+                sc.name AS sub_category_name,
+                sc.slug AS sub_category_slug,
+                usc.name AS under_sub_category_name,
+                b.name AS brand_name
+            FROM {self.schema}.{self.table} p
+            INNER JOIN {self.schema}.categorytbl c ON c.category_id = p.category_id
+            LEFT JOIN {self.schema}.sub_categorytbl sc ON sc.sub_category_id = p.sub_category_id
+            LEFT JOIN {self.schema}.under_sub_categorytbl usc
+                ON usc.under_sub_category_id = p.under_sub_category_id
+            LEFT JOIN {self.schema}.brandtbl b ON b.brand_id = p.brand_id
+            WHERE p.slug = %s
+              AND p.is_deleted = FALSE
+              AND p.is_active = TRUE
+        """
+        return select_one(sql, [slug])
+
+    def list_storefront_paginated(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        category_id: int,
+        sub_category_id: int,
+        sort_by: str = "recommended",
+    ) -> tuple[list[dict[str, Any]], int]:
+        offset = (page - 1) * page_size
+        params: list[Any] = [category_id, sub_category_id]
+        where = """
+            p.is_deleted = FALSE
+            AND p.is_active = TRUE
+            AND p.category_id = %s
+            AND p.sub_category_id = %s
+        """
+
+        sort_map = {
+            "price-low": ("COALESCE(NULLIF(p.sale_price, 0), p.base_price)", "ASC"),
+            "price-high": ("COALESCE(NULLIF(p.sale_price, 0), p.base_price)", "DESC"),
+            "newest": ("p.created_at", "DESC"),
+            "discount": ("(p.mrp - COALESCE(NULLIF(p.sale_price, 0), p.base_price))", "DESC"),
+        }
+        order_col, direction = sort_map.get(sort_by, ("p.created_at", "DESC"))
+
+        count_sql = f"""
+            SELECT COUNT(*) AS total
+            FROM {self.schema}.{self.table} p
+            WHERE {where}
+        """
+        count_row = select_one(count_sql, params)
+        total = int(count_row["total"]) if count_row else 0
+
+        sql = f"""
+            SELECT
+                p.product_id,
+                p.name,
+                p.slug,
+                p.sale_price,
+                p.base_price,
+                p.mrp,
+                p.is_featured,
+                p.is_new_arrival,
+                p.is_best_seller,
+                p.is_trending,
+                b.name AS brand_name,
+                (
+                    SELECT pi.image_url
+                    FROM {self.schema}.product_imagestbl pi
+                    WHERE pi.product_id = p.product_id
+                      AND pi.is_deleted = FALSE
+                      AND pi.is_active = TRUE
+                    ORDER BY pi.is_primary DESC, pi.display_order ASC
+                    LIMIT 1
+                ) AS primary_image_url
+            FROM {self.schema}.{self.table} p
+            LEFT JOIN {self.schema}.brandtbl b ON b.brand_id = p.brand_id
+            WHERE {where}
+            ORDER BY {order_col} {direction}, p.product_id DESC
+            LIMIT %s OFFSET %s
+        """
+        rows = select_query(sql, [*params, page_size, offset])
+        return rows, total
+
     def slug_exists(self, slug: str, *, exclude_id: Optional[int] = None) -> bool:
         sql = f"""
             SELECT product_id FROM {self.schema}.{self.table}

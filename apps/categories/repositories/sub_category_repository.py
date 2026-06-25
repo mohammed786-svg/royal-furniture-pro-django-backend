@@ -89,6 +89,20 @@ class SubCategoryRepository:
         """
         return select_one(sql, [sub_category_id])
 
+    def fetch_by_slug(self, category_id: int, slug: str) -> Optional[dict[str, Any]]:
+        sql = f"""
+            SELECT sc.*, c.name AS category_name, c.slug AS category_slug
+            FROM {self.schema}.{self.table} sc
+            INNER JOIN {self.schema}.categorytbl c ON c.category_id = sc.category_id
+            WHERE sc.category_id = %s
+              AND sc.slug = %s
+              AND sc.is_deleted = FALSE
+              AND sc.is_visible = TRUE
+              AND sc.is_active = TRUE
+              AND c.is_deleted = FALSE
+        """
+        return select_one(sql, [category_id, slug])
+
     def slug_exists(
         self,
         category_id: int,

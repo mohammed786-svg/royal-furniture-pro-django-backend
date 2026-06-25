@@ -10,6 +10,18 @@ class CacheKeys:
         return f"{CacheKeys.PREFIX}:navbar:tree"
 
     @staticmethod
+    def banners(position_code: str) -> str:
+        return f"{CacheKeys.PREFIX}:banners:{position_code}"
+
+    @staticmethod
+    def storefront_home() -> str:
+        return f"{CacheKeys.PREFIX}:storefront:home"
+
+    @staticmethod
+    def storefront_plp(category_slug: str, sub_slug: str, page: int, sort: str) -> str:
+        return f"{CacheKeys.PREFIX}:storefront:plp:{category_slug}:{sub_slug}:{page}:{sort}"
+
+    @staticmethod
     def category(slug: str) -> str:
         return f"{CacheKeys.PREFIX}:category:{slug}"
 

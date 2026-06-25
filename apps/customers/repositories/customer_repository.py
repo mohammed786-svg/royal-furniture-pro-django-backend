@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Optional
 
 from psycopg2.extensions import connection as PgConnection
+from psycopg2.extras import Json
 
 from core.database import insert_query_returning, select_one, select_query, update_query
 from core.database.raw_queries import execute
@@ -68,6 +70,25 @@ class CustomerRepository:
         """
         rows = select_query(sql, [*params, page_size, offset])
         return rows, total
+
+    def fetch_by_phone(self, phone: str) -> Optional[dict[str, Any]]:
+        sql = f"""
+            SELECT
+                c.*,
+                cp.customer_profile_id,
+                cp.date_of_birth,
+                cp.gender,
+                cp.profile_image,
+                cp.preferences,
+                cp.newsletter_subscribed
+            FROM {self.schema}.{self.table} c
+            LEFT JOIN {self.schema}.customer_profiletbl cp
+                ON cp.customer_id = c.customer_id AND cp.is_deleted = FALSE
+            WHERE c.phone = %s AND c.is_deleted = FALSE AND c.is_active = TRUE
+            ORDER BY c.customer_id ASC
+            LIMIT 1
+        """
+        return select_one(sql, [phone])
 
     def fetch_by_id(self, customer_id: int) -> Optional[dict[str, Any]]:
         sql = f"""
@@ -146,6 +167,20 @@ class CustomerRepository:
         """
         return update_query(sql, [customer_id]) > 0
 
+    def _normalize_profile_data(self, data: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(data)
+        if "date_of_birth" in normalized and normalized["date_of_birth"] in ("", "NA", None):
+            normalized["date_of_birth"] = None
+        if "preferences" in normalized:
+            prefs = normalized["preferences"]
+            if isinstance(prefs, str):
+                try:
+                    prefs = json.loads(prefs) if prefs else {}
+                except json.JSONDecodeError:
+                    prefs = {}
+            normalized["preferences"] = Json(prefs or {})
+        return normalized
+
     def upsert_profile(
         self,
         customer_id: int,
@@ -159,6 +194,7 @@ class CustomerRepository:
             WHERE customer_id = %s AND is_deleted = FALSE
         """
         existing = select_one(existing_sql, [customer_id], conn=conn)
+        data = self._normalize_profile_data(data)
         if existing:
             sets = ", ".join(f"{key} = %s" for key in data)
             sql = f"""
@@ -174,13 +210,25 @@ class CustomerRepository:
             rows = execute(sql, params, fetch=True)
             return rows[0] if rows else {}
 
+        dob = data.get("date_of_birth")
+        prefs = data.get("preferences", Json({}))
+        if not isinstance(prefs, Json):
+            prefs = Json(prefs or {})
+
         sql = f"""
             INSERT INTO {self.schema}.customer_profiletbl
                 (customer_id, date_of_birth, gender, profile_image, preferences, newsletter_subscribed)
             VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING *
         """
-        params = [customer_id, *data.values()]
+        params = [
+            customer_id,
+            dob,
+            data.get("gender", "NA"),
+            data.get("profile_image", "NA"),
+            prefs,
+            bool(data.get("newsletter_subscribed", False)),
+        ]
         if conn is not None:
             rows = execute(sql, params, conn=conn, fetch=True)
             return rows[0] if rows else {}

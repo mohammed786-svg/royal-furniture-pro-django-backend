@@ -90,6 +90,7 @@ INSTALLED_APPS = [
     "apps.websocket",
     "apps.common",
     "apps.audit_logs",
+    "apps.storefront",
 ]
 
 MIDDLEWARE = [
@@ -183,6 +184,7 @@ CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
 CORS_ALLOW_HEADERS = (
     *default_headers,
     "x-payload-encrypted",
+    "x-guest-session",
 )
 CORS_EXPOSE_HEADERS = ("x-payload-encrypted", "x-request-id")
 
