@@ -86,6 +86,22 @@ cd /root/royal-furniture-pro-django-backend
 sudo -u postgres psql -d royal_furniture_db -f royal_furniture.sql
 ```
 
+**Seed admin logins** (Super Admin + Admin Manager, password `royal@2026`):
+
+```bash
+cd /root/royal-furniture-pro-django-backend
+source venv/bin/activate
+export DJANGO_ENV=production
+python scripts/seed_admin_users.py
+```
+
+| Role | Email | Password |
+|------|-------|----------|
+| Super Admin | `super@royal.com` | `royal@2026` |
+| Admin Manager | `admin@royal.com` | `royal@2026` |
+
+Login at `https://royalfurniturepro.azdeploy.com/my-admin/login`. Safe to re-run — updates passwords if users already exist.
+
 ---
 
 ## 3. Media & static directories
