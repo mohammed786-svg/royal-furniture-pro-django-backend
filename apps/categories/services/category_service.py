@@ -9,7 +9,7 @@ from apps.categories.repositories.under_sub_category_repository import under_sub
 from core.cache.cache_keys import CacheKeys
 from core.cache.cache_manager import cache_manager
 from core.exceptions.base import NotFoundException, ValidationException
-from core.helpers.text import from_db_text, make_slug, save_base64_image, to_db_text, unique_slug
+from core.helpers.text import from_db_text, make_slug, save_base64_image, to_db_text
 
 
 def _format_dt(value: Any) -> Optional[str]:
@@ -29,6 +29,35 @@ def _maybe_image(value: Any, *, prefix: str, field_key: str, updates: dict[str, 
         updates[field_key] = "NA"
     elif isinstance(value, str):
         updates[field_key] = value
+
+
+def _ensure_category_slug_available(slug: str, *, exclude_id: Optional[int] = None) -> None:
+    if category_repository.slug_exists(slug, exclude_id=exclude_id):
+        raise ValidationException(details=[{"field": "slug", "message": "Category slug already exists"}])
+
+
+def _ensure_sub_category_slug_available(
+    category_id: int,
+    slug: str,
+    *,
+    exclude_id: Optional[int] = None,
+) -> None:
+    if sub_category_repository.slug_exists(category_id, slug, exclude_id=exclude_id):
+        raise ValidationException(
+            details=[{"field": "slug", "message": "Sub-category slug already exists for this category"}],
+        )
+
+
+def _ensure_under_sub_category_slug_available(
+    sub_category_id: int,
+    slug: str,
+    *,
+    exclude_id: Optional[int] = None,
+) -> None:
+    if under_sub_category_repository.slug_exists(sub_category_id, slug, exclude_id=exclude_id):
+        raise ValidationException(
+            details=[{"field": "slug", "message": "Under sub-category slug already exists"}],
+        )
 
 
 def _base_list_params(kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -192,8 +221,8 @@ class CategoryService:
             raise ValidationException(details=[{"field": "name", "message": "Name is required"}])
 
         slug_input = (payload.get("slug") or "").strip()
-        base_slug = make_slug(slug_input or name)
-        slug = unique_slug(base_slug, lambda s: category_repository.slug_exists(s))
+        slug = make_slug(slug_input or name)
+        _ensure_category_slug_available(slug)
 
         data = {
             "name": to_db_text(name),
@@ -230,10 +259,7 @@ class CategoryService:
             updates["name"] = to_db_text(name)
         if "slug" in payload:
             slug = make_slug((payload.get("slug") or "").strip() or updates.get("name", existing["name"]))
-            slug = unique_slug(
-                slug,
-                lambda s: category_repository.slug_exists(s, exclude_id=category_id),
-            )
+            _ensure_category_slug_available(slug, exclude_id=category_id)
             updates["slug"] = slug
         for key, db_key in [
             ("seoTitle", "seo_title"),
@@ -279,11 +305,8 @@ class CategoryService:
         if not category_repository.fetch_by_id(category_id):
             raise ValidationException(details=[{"field": "categoryId", "message": "Category not found"}])
 
-        base_slug = make_slug((payload.get("slug") or "").strip() or name)
-        slug = unique_slug(
-            base_slug,
-            lambda s: sub_category_repository.slug_exists(category_id, s),
-        )
+        slug = make_slug((payload.get("slug") or "").strip() or name)
+        _ensure_sub_category_slug_available(category_id, slug)
 
         data = {
             "category_id": category_id,
@@ -330,13 +353,10 @@ class CategoryService:
                 (payload.get("slug") or "").strip()
                 or updates.get("name", existing["name"]),
             )
-            slug = unique_slug(
+            _ensure_sub_category_slug_available(
+                category_id,
                 slug,
-                lambda s: sub_category_repository.slug_exists(
-                    category_id,
-                    s,
-                    exclude_id=sub_category_id,
-                ),
+                exclude_id=sub_category_id,
             )
             updates["slug"] = slug
         for key, db_key in [
@@ -386,11 +406,8 @@ class CategoryService:
         if not sub_row or int(sub_row["category_id"]) != category_id:
             raise ValidationException(details=[{"field": "subCategoryId", "message": "Invalid sub-category"}])
 
-        base_slug = make_slug((payload.get("slug") or "").strip() or name)
-        slug = unique_slug(
-            base_slug,
-            lambda s: under_sub_category_repository.slug_exists(sub_category_id, s),
-        )
+        slug = make_slug((payload.get("slug") or "").strip() or name)
+        _ensure_under_sub_category_slug_available(sub_category_id, slug)
 
         data = {
             "sub_category_id": sub_category_id,
@@ -442,13 +459,10 @@ class CategoryService:
                 (payload.get("slug") or "").strip()
                 or updates.get("name", existing["name"]),
             )
-            slug = unique_slug(
+            _ensure_under_sub_category_slug_available(
+                sub_category_id,
                 slug,
-                lambda s: under_sub_category_repository.slug_exists(
-                    sub_category_id,
-                    s,
-                    exclude_id=under_sub_category_id,
-                ),
+                exclude_id=under_sub_category_id,
             )
             updates["slug"] = slug
         for key, db_key in [

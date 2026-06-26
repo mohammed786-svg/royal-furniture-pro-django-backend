@@ -97,7 +97,7 @@ class CategoryRepository:
         sql = f"""
             SELECT category_id
             FROM {self.schema}.{self.table}
-            WHERE slug = %s AND is_deleted = FALSE
+            WHERE slug = %s
         """
         params: list[Any] = [slug]
         if exclude_id:

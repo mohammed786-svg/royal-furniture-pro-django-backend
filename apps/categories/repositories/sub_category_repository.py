@@ -113,7 +113,7 @@ class SubCategoryRepository:
         sql = f"""
             SELECT sub_category_id
             FROM {self.schema}.{self.table}
-            WHERE category_id = %s AND slug = %s AND is_deleted = FALSE
+            WHERE category_id = %s AND slug = %s
         """
         params: list[Any] = [category_id, slug]
         if exclude_id:

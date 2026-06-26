@@ -4,11 +4,12 @@ from __future__ import annotations
 import logging
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import DatabaseError
+from django.db import DatabaseError, IntegrityError
 from rest_framework import status
 from rest_framework.views import exception_handler as drf_exception_handler
 
 from core.exceptions.base import RoyalFurnitureException, ValidationException
+from core.exceptions.integrity import parse_integrity_error
 from core.responses.formatter import APIResponse
 
 logger = logging.getLogger("api")
@@ -37,6 +38,39 @@ def custom_exception_handler(exc, context):
             errors=exc.message_dict if hasattr(exc, "message_dict") else exc.messages,
             endpoint=endpoint,
         )
+
+    if isinstance(exc, DatabaseError) and not isinstance(exc, IntegrityError):
+        logger.exception("Database error")
+        return APIResponse.error(
+            message="Database error",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            endpoint=endpoint,
+        )
+
+    if isinstance(exc, IntegrityError):
+        message, details = parse_integrity_error(exc)
+        logger.warning("Integrity error on %s: %s", endpoint, exc)
+        return APIResponse.error(
+            message=message,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            errors=details,
+            endpoint=endpoint,
+        )
+
+    try:
+        from psycopg2 import errors as pg_errors
+
+        if isinstance(exc, pg_errors.UniqueViolation):
+            message, details = parse_integrity_error(exc)
+            logger.warning("Unique violation on %s: %s", endpoint, exc)
+            return APIResponse.error(
+                message=message,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                errors=details,
+                endpoint=endpoint,
+            )
+    except ImportError:
+        pass
 
     if isinstance(exc, DatabaseError):
         logger.exception("Database error")
