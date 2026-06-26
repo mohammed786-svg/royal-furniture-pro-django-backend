@@ -1,0 +1,19 @@
+[Unit]
+Description=Royal Furniture Pro Next.js
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/html/royal_furniture_pro_website/royal-furniture-pro-frontend
+Environment=HOME=/var/www/html/royal_furniture_pro_website/royal-furniture-pro-frontend
+Environment=NODE_ENV=production
+Environment=PORT=3010
+EnvironmentFile=-/var/www/html/royal_furniture_pro_website/royal-furniture-pro-frontend/.env.production
+ExecStart=/usr/bin/node /var/www/html/royal_furniture_pro_website/royal-furniture-pro-frontend/node_modules/next/dist/bin/next start -p 3010
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -41,10 +41,11 @@ CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", REDIS_URL)
 
 # Media / CDN
 MEDIA_URL = os.getenv("MEDIA_URL", "/media/")
-MEDIA_ROOT = BASE_DIR / os.getenv("MEDIA_ROOT", "media")
+_media_root = os.getenv("MEDIA_ROOT", "media")
+MEDIA_ROOT = Path(_media_root) if os.path.isabs(_media_root) else BASE_DIR / _media_root
 STATIC_URL = os.getenv("STATIC_URL", "/static/")
-STATIC_ROOT = BASE_DIR / "staticfiles"
-CDN_URL = os.getenv("CDN_URL", "")
+STATIC_ROOT = Path(os.getenv("STATIC_ROOT", str(BASE_DIR / "staticfiles")))
+CDN_URL = os.getenv("CDN_URL", "").rstrip("/")
 
 # Integrations (placeholders)
 SHIPROCKET_API_KEY = os.getenv("SHIPROCKET_API_KEY", "")

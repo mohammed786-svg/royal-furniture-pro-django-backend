@@ -1,0 +1,26 @@
+[Unit]
+Description=Royal Furniture Pro Django (Gunicorn WSGI — development port 4002)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/royal-furniture-pro-django-backend
+Environment=PYTHONUNBUFFERED=1
+Environment=DJANGO_ENV=development
+EnvironmentFile=-/root/royal-furniture-pro-django-backend/.env
+ExecStart=/root/royal-furniture-pro-django-backend/venv/bin/gunicorn \
+  --bind 127.0.0.1:4002 \
+  --workers 2 \
+  --threads 2 \
+  --timeout 120 \
+  --access-logfile - \
+  --error-logfile - \
+  config.wsgi:application
+Restart=on-failure
+RestartSec=5
+
+# Enable only when testing on VPS: systemctl enable --now royalpro-gunicorn-dev.service
+# Do NOT run alongside production gunicorn on the same code path without care.
+
+[Install]
+WantedBy=multi-user.target

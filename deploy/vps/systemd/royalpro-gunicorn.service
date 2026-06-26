@@ -1,0 +1,23 @@
+[Unit]
+Description=Royal Furniture Pro Django (Gunicorn WSGI — production)
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/royal-furniture-pro-django-backend
+Environment=PYTHONUNBUFFERED=1
+Environment=DJANGO_ENV=production
+EnvironmentFile=-/root/royal-furniture-pro-django-backend/.env
+ExecStart=/root/royal-furniture-pro-django-backend/venv/bin/gunicorn \
+  --bind 127.0.0.1:4000 \
+  --workers 3 \
+  --threads 2 \
+  --timeout 120 \
+  --access-logfile - \
+  --error-logfile - \
+  config.wsgi:application
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
