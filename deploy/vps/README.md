@@ -44,6 +44,8 @@ On your laptop, `frontend/.env.local` should use `http://<VPS-IP>:4002/api/v1` a
 
 Backend `.env` must include `CORS_ALLOWED_ORIGINS=http://localhost:3000,...` and `ALLOWED_HOSTS` with your VPS IP.
 
+`API_CRYPTO_KEY` must be **64 hex characters** (32 bytes). Generate with `openssl rand -hex 32` and set the **same value** in backend `.env` and frontend `NEXT_PUBLIC_API_CRYPTO_KEY`. A placeholder like `change-me-...` will crash or disable encryption.
+
 ---
 
 ## 1. System packages
@@ -72,7 +74,7 @@ sudo -u postgres psql
 
 ```sql
 CREATE DATABASE royal_furniture_db;
-CREATE USER royal_user WITH PASSWORD 'your-password';
+CREATE USER royal_user WITH PASSWORD 'royal@2026';
 GRANT ALL PRIVILEGES ON DATABASE royal_furniture_db TO royal_user;
 \q
 ```

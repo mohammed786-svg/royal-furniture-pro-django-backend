@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 from typing import Any
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 
 def get_crypto_key() -> bytes | None:
@@ -18,9 +21,16 @@ def get_crypto_key() -> bytes | None:
     try:
         key = bytes.fromhex(raw)
     except ValueError:
-        key = raw.encode("utf-8")
+        logger.warning(
+            "API_CRYPTO_KEY is not valid hex; encryption disabled. "
+            "Use 64 hex characters (openssl rand -hex 32)."
+        )
+        return None
     if len(key) != 32:
-        raise ValueError("API_CRYPTO_KEY must be 32 bytes (64 hex characters)")
+        logger.warning(
+            "API_CRYPTO_KEY must be 32 bytes (64 hex characters); encryption disabled."
+        )
+        return None
     return key
 
 
