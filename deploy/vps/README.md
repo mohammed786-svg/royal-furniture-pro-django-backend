@@ -18,8 +18,31 @@ End-to-end guide for **royalfurniturepro.azdeploy.com**.
 |---------|------|
 | Gunicorn (production) | **4000** |
 | Gunicorn (dev/testing) | **4002** |
-| Daphne WebSocket | **7002** |
+| `run_dev.sh` HTTP (runserver) | **4002** |
+| `run_dev.sh` Daphne (WebSocket) | **4003** |
+| Daphne WebSocket (systemd prod) | **7002** |
 | Next.js | **3010** |
+
+### Remote local UI (laptop → VPS dev API)
+
+On the VPS:
+
+```bash
+cd /root/royal-furniture-pro-django-backend
+chmod +x run_dev.sh
+# Stop production gunicorn if port 4002 conflicts with royalpro-gunicorn-dev
+sudo ufw allow 4002/tcp
+sudo ufw allow 4003/tcp
+./run_dev.sh
+```
+
+On your laptop, `frontend/.env.local` should use `http://<VPS-IP>:4002/api/v1` and `ws://<VPS-IP>:4003/ws/`, then:
+
+```bash
+./dev.sh remote
+```
+
+Backend `.env` must include `CORS_ALLOWED_ORIGINS=http://localhost:3000,...` and `ALLOWED_HOSTS` with your VPS IP.
 
 ---
 
@@ -217,7 +240,45 @@ sudo systemctl restart royalpro-nextjs
 
 ---
 
-## 10. Troubleshooting
+## 10. Remote dev API (port 4002) for local Next.js
+
+On the VPS, expose Django dev server + Daphne for local frontend development:
+
+```bash
+cd /root/royal-furniture-pro-django-backend
+chmod +x run_dev.sh
+# Stop production gunicorn on 4000 if you need the same machine quiet, or run dev alongside:
+./run_dev.sh
+```
+
+Defaults: **HTTP `0.0.0.0:4002`**, **WebSocket `0.0.0.0:4003`**
+
+```bash
+sudo ufw allow 4002/tcp
+sudo ufw allow 4003/tcp
+```
+
+Backend `.env` (development):
+
+```env
+DJANGO_ENV=development
+ALLOWED_HOSTS=royalfurniturepro.azdeploy.com,62.72.57.222,localhost,127.0.0.1
+CORS_ALLOWED_ORIGINS=http://localhost:3000,https://royalfurniturepro.azdeploy.com
+```
+
+Local machine `frontend/.env.local`:
+
+```env
+NEXT_PUBLIC_API_URL=http://62.72.57.222:4002/api/v1
+NEXT_PUBLIC_MEDIA_BASE_URL=http://62.72.57.222:4002
+NEXT_PUBLIC_WS_URL=ws://62.72.57.222:4003/ws/
+```
+
+Then locally: `./dev.sh remote`
+
+---
+
+## 11. Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
