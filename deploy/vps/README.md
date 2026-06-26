@@ -218,6 +218,16 @@ Then complete SSL + `.env` secrets manually.
 
 ## 9. Deploy updates
 
+**One command (backend + frontend + services):**
+
+```bash
+cd /root/royal-furniture-pro-django-backend
+git pull
+./deploy/vps/deploy.sh
+```
+
+**Or manually:**
+
 **Backend:**
 
 ```bash
