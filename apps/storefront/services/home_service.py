@@ -204,11 +204,12 @@ class StorefrontHomeService:
         }
 
     def get_homepage(self) -> dict[str, Any]:
-        return cache_manager.get_or_set(
-            CacheKeys.storefront_home(),
-            self._build_payload,
-            ttl=HOME_CACHE_TTL,
-        )
+        fresh = self._build_payload()
+        cached = cache_manager.get(CacheKeys.storefront_home())
+        if cached and cached.get("version") == fresh.get("version"):
+            return cached
+        cache_manager.set(CacheKeys.storefront_home(), fresh, ttl=HOME_CACHE_TTL)
+        return fresh
 
     def invalidate_homepage_cache(self) -> None:
         cache_manager.delete(CacheKeys.storefront_home())

@@ -88,11 +88,16 @@ class NavbarService:
         }
 
     def get_navbar_tree(self) -> dict[str, Any]:
-        return cache_manager.get_or_set(
-            CacheKeys.navbar(),
-            self._build_tree,
-            ttl=NAVBAR_CACHE_TTL,
-        )
+        fresh = self._build_tree()
+        cached = cache_manager.get(CacheKeys.navbar())
+        if (
+            cached
+            and cached.get("version") == fresh.get("version")
+            and len(cached.get("items") or []) == len(fresh.get("items") or [])
+        ):
+            return cached
+        cache_manager.set(CacheKeys.navbar(), fresh, ttl=NAVBAR_CACHE_TTL)
+        return fresh
 
 
 navbar_service = NavbarService()
