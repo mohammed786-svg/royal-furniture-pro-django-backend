@@ -335,3 +335,4 @@ deploy/vps/
 │   └── frontend.production.env.example
 └── scripts/bootstrap.sh
 ```
+## redis-cli DEL royal:navbar:tree // to clear the vps cache

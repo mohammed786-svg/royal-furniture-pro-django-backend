@@ -76,7 +76,8 @@ class NavbarService:
                     "name": category_name,
                     "slug": category_slug,
                     "href": _category_href(category_slug, first_sub_slug),
-                    "iconUrl": from_db_text(category.get("icon_url")),
+                    "iconUrl": from_db_text(category.get("image_url"))
+                    or from_db_text(category.get("icon_url")),
                     "columns": columns,
                 }
             )

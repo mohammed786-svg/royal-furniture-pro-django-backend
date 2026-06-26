@@ -22,6 +22,7 @@ class NavbarRepository:
                 category_id,
                 name,
                 slug,
+                image_url,
                 icon_url,
                 display_order,
                 updated_at,
