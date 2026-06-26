@@ -38,7 +38,8 @@ HTTP_PORT="${HTTP_PORT:-${GUNICORN_PORT:-4002}}"
 DAPHNE_PORT="${DAPHNE_PORT:-4003}"
 BIND_HOST="${BIND_HOST:-0.0.0.0}"
 VENV="${VENV:-${SCRIPT_DIR}/venv}"
-export DJANGO_ENV="${DJANGO_ENV:-development}"
+# Always use development settings (ALLOWED_HOSTS=*, localhost CORS) for run_dev.sh.
+export DJANGO_ENV=development
 
 if [[ ! -f "${SCRIPT_DIR}/manage.py" ]]; then
   echo "ERROR: manage.py not found in ${SCRIPT_DIR}"
