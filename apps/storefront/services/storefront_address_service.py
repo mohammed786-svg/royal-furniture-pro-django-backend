@@ -25,24 +25,53 @@ ADDRESS_TYPE_MAP = {
     "office": "OFFICE",
     "other": "OTHER",
 }
+_LANDMARK_SEP = "\x1f"
+
+
+def _encode_landmark(*, address_type: str, custom_label: str, landmark: str) -> str:
+    custom = custom_label.strip()
+    delivery = landmark.strip()
+    if address_type == "OTHER" and custom:
+        if delivery:
+            return f"{custom}{_LANDMARK_SEP}{delivery}"
+        return custom
+    return delivery or "NA"
+
+
+def _decode_landmark(raw: str, address_type: str) -> tuple[Optional[str], str]:
+    text = (raw or "").strip()
+    if not text or text.upper() == "NA":
+        return None, ""
+    if _LANDMARK_SEP in text:
+        custom, delivery = text.split(_LANDMARK_SEP, 1)
+        return custom.strip() or None, delivery.strip()
+    if address_type == "OTHER":
+        return text, ""
+    return None, text
 
 
 class StorefrontAddressService:
     def _serialize(self, row: dict[str, Any]) -> dict[str, Any]:
-        addr_type = (from_db_text(row.get("address_type")) or "HOME").lower()
+        addr_type_db = (from_db_text(row.get("address_type")) or "HOME").upper()
+        addr_type = addr_type_db.lower()
         if addr_type not in ADDRESS_TYPE_MAP:
             addr_type = "home"
+        landmark_raw = from_db_text(row.get("landmark")) or ""
+        custom_label, landmark = _decode_landmark(landmark_raw, addr_type_db)
+        line2 = from_db_text(row.get("address_line2")) or ""
         return {
             "id": str(row["address_id"]),
             "type": addr_type if addr_type in ("home", "office", "other") else "home",
-            "customLabel": from_db_text(row.get("landmark")) or None,
+            "customLabel": custom_label,
+            "landmark": landmark or None,
             "fullName": from_db_text(row.get("full_name")) or "",
             "phone": from_db_text(row.get("phone")) or "",
             "line1": from_db_text(row.get("address_line1")) or "",
-            "line2": from_db_text(row.get("address_line2")) or None,
+            "line2": line2 if line2.upper() != "NA" else None,
             "city": from_db_text(row.get("city")) or "",
             "state": from_db_text(row.get("state")) or "",
             "pincode": from_db_text(row.get("pincode")) or "",
+            "country": from_db_text(row.get("country")) or "India",
             "isDefault": bool(row.get("is_default")),
         }
 
@@ -140,10 +169,23 @@ class StorefrontAddressService:
                     details=[{"field": "line1", "message": "Address line is required"}]
                 )
             result["address_line1"] = to_db_text(line1)
-        if "line2" in payload:
-            result["address_line2"] = to_db_text(payload.get("line2") or "NA")
-        if "customLabel" in payload:
-            result["landmark"] = to_db_text(payload.get("customLabel") or "NA")
+        if not partial or "line2" in payload:
+            line2 = (payload.get("line2") or "").strip()
+            result["address_line2"] = to_db_text(line2 or "NA")
+        if not partial or any(k in payload for k in ("customLabel", "landmark", "type")):
+            addr_type = result.get("address_type") or ADDRESS_TYPE_MAP.get(
+                (payload.get("type") or "home").lower(),
+                "HOME",
+            )
+            custom_label = (payload.get("customLabel") or "").strip()
+            landmark = (payload.get("landmark") or "").strip()
+            result["landmark"] = to_db_text(
+                _encode_landmark(
+                    address_type=addr_type,
+                    custom_label=custom_label,
+                    landmark=landmark,
+                )
+            )
         if not partial or "city" in payload:
             result["city"] = to_db_text((payload.get("city") or "").strip() or "NA")
         if not partial or "state" in payload:

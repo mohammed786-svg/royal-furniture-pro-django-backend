@@ -137,6 +137,16 @@ class ShiprocketIntegrationService:
 
         line1 = from_db_text(address.get("address_line1")) or ""
         line2 = from_db_text(address.get("address_line2")) or ""
+        landmark_raw = from_db_text(address.get("landmark")) or ""
+        if landmark_raw and landmark_raw.upper() != "NA":
+            if "\x1f" in landmark_raw:
+                _, delivery_landmark = landmark_raw.split("\x1f", 1)
+                landmark_note = delivery_landmark.strip()
+            else:
+                addr_type = (from_db_text(address.get("address_type")) or "").upper()
+                landmark_note = "" if addr_type == "OTHER" else landmark_raw.strip()
+            if landmark_note:
+                line2 = f"{line2}, Near {landmark_note}" if line2 and line2.upper() != "NA" else f"Near {landmark_note}"
         city = from_db_text(address.get("city")) or ""
         state = from_db_text(address.get("state")) or ""
         pincode = from_db_text(address.get("pincode")) or ""
