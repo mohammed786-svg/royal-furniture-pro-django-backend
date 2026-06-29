@@ -93,6 +93,9 @@ class ReturnService:
                 "changed_at": datetime.now(),
             }, conn=conn)
 
+        from apps.orders.services.order_notification_service import order_notification_service
+
+        order_notification_service.notify_return(order_id, request_type=target_status)
         return order_service.get_order(order_id)
 
 

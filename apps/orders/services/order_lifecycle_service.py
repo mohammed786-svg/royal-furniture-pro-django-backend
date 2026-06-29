@@ -143,6 +143,9 @@ class OrderLifecycleService:
                 details=[{"field": "shiprocket", "message": str(exc)}]
             ) from exc
 
+        from apps.orders.services.order_notification_service import order_notification_service
+
+        order_notification_service.notify_awb_generated(order_id)
         return order_service.get_order(order_id)
 
     def request_return_or_exchange(
@@ -228,6 +231,9 @@ class OrderLifecycleService:
                 conn=conn,
             )
 
+        from apps.orders.services.order_notification_service import order_notification_service
+
+        order_notification_service.notify_return(order_id, request_type=normalized_type)
         return order_service.get_order(order_id)
 
 

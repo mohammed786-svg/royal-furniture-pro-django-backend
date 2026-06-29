@@ -389,6 +389,9 @@ class OrderService:
                     "paid_at": datetime.now() if payment_status in ("PAID", "VERIFIED") else None,
                 }, conn=conn)
 
+        from apps.orders.services.order_notification_service import order_notification_service
+
+        order_notification_service.notify_created(order_id)
         return self.get_order(order_id)
 
     def update_order(
@@ -466,6 +469,22 @@ class OrderService:
                     "tracked_at": tracking.get("trackedAt") or datetime.now(),
                     "is_customer_visible": bool(tracking.get("isCustomerVisible", True)),
                 }, conn=conn)
+
+        from apps.orders.services.order_notification_service import order_notification_service
+
+        if to_status != from_status:
+            if to_status == "CANCELLED":
+                order_notification_service.notify_cancelled(order_id)
+            elif to_status == "RETURNED":
+                order_notification_service.notify_return(order_id)
+            else:
+                order_notification_service.notify_updated(
+                    order_id,
+                    from_status=from_status,
+                    to_status=to_status,
+                )
+        elif updates:
+            order_notification_service.notify_updated(order_id)
 
         return self.get_order(order_id)
 

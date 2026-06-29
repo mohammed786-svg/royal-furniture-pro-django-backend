@@ -219,6 +219,9 @@ class CheckoutService:
                 "Shiprocket order sync failed for order %s", order_id
             )
 
+        from apps.orders.services.order_notification_service import order_notification_service
+
+        order_notification_service.notify_created(order_id)
         return result
 
 
