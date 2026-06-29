@@ -81,6 +81,45 @@ class UnderSubCategoryRepository:
         rows = select_query(sql, [*params, page_size, offset])
         return rows, total
 
+    def fetch_by_slug(self, sub_category_id: int, slug: str) -> Optional[dict[str, Any]]:
+        sql = f"""
+            SELECT usc.*, c.name AS category_name, sc.name AS sub_category_name
+            FROM {self.schema}.{self.table} usc
+            INNER JOIN {self.schema}.categorytbl c ON c.category_id = usc.category_id
+            INNER JOIN {self.schema}.sub_categorytbl sc ON sc.sub_category_id = usc.sub_category_id
+            WHERE usc.sub_category_id = %s
+              AND usc.slug = %s
+              AND usc.is_deleted = FALSE
+              AND usc.is_visible = TRUE
+              AND usc.is_active = TRUE
+        """
+        return select_one(sql, [sub_category_id, slug])
+
+    def resolve_for_listing(
+        self,
+        sub_category_id: int,
+        slug_or_id: str,
+    ) -> Optional[dict[str, Any]]:
+        """Resolve under-sub-category by numeric ID or slug (with simple plural tolerance)."""
+        token = (slug_or_id or "").strip()
+        if not token:
+            return None
+
+        if token.isdigit():
+            row = self.fetch_by_id(int(token))
+            if row and int(row["sub_category_id"]) == sub_category_id:
+                return row
+            return None
+
+        row = self.fetch_by_slug(sub_category_id, token)
+        if row:
+            return row
+
+        if token.endswith("s"):
+            return self.fetch_by_slug(sub_category_id, token[:-1])
+
+        return self.fetch_by_slug(sub_category_id, f"{token}s")
+
     def fetch_by_id(self, under_sub_category_id: int) -> Optional[dict[str, Any]]:
         sql = f"""
             SELECT usc.*, c.name AS category_name, sc.name AS sub_category_name

@@ -23,6 +23,11 @@ from apps.storefront.views import (
 urlpatterns = [
     path("home/", StorefrontHomeView.as_view(), name="storefront-home"),
     path(
+        "catalog/<slug:category_slug>/<slug:sub_category_slug>/<slug:under_sub_category_slug>/",
+        StorefrontCategoryListingView.as_view(),
+        name="storefront-category-listing-under",
+    ),
+    path(
         "catalog/<slug:category_slug>/<slug:sub_category_slug>/",
         StorefrontCategoryListingView.as_view(),
         name="storefront-category-listing",

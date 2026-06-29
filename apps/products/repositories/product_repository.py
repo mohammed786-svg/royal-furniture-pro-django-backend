@@ -136,6 +136,7 @@ class ProductRepository:
                 sc.name AS sub_category_name,
                 sc.slug AS sub_category_slug,
                 usc.name AS under_sub_category_name,
+                usc.slug AS under_sub_category_slug,
                 b.name AS brand_name
             FROM {self.schema}.{self.table} p
             INNER JOIN {self.schema}.categorytbl c ON c.category_id = p.category_id
@@ -156,6 +157,7 @@ class ProductRepository:
         page_size: int,
         category_id: int,
         sub_category_id: int,
+        under_sub_category_id: Optional[int] = None,
         sort_by: str = "recommended",
     ) -> tuple[list[dict[str, Any]], int]:
         offset = (page - 1) * page_size
@@ -166,6 +168,9 @@ class ProductRepository:
             AND p.category_id = %s
             AND p.sub_category_id = %s
         """
+        if under_sub_category_id:
+            where += " AND (p.under_sub_category_id = %s OR p.under_sub_category_id IS NULL)"
+            params.append(under_sub_category_id)
 
         sort_map = {
             "price-low": ("COALESCE(NULLIF(p.sale_price, 0), p.base_price)", "ASC"),

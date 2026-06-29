@@ -18,8 +18,31 @@ class CacheKeys:
         return f"{CacheKeys.PREFIX}:storefront:home"
 
     @staticmethod
-    def storefront_plp(category_slug: str, sub_slug: str, page: int, sort: str) -> str:
-        return f"{CacheKeys.PREFIX}:storefront:plp:{category_slug}:{sub_slug}:{page}:{sort}"
+    def storefront_plp_ids(
+        category_id: int,
+        sub_category_id: int,
+        under_sub_category_id: int,
+        page: int,
+        sort: str,
+    ) -> str:
+        return (
+            f"{CacheKeys.PREFIX}:storefront:plp:id:"
+            f"{category_id}:{sub_category_id}:{under_sub_category_id}:{page}:{sort}"
+        )
+
+    @staticmethod
+    def storefront_plp(
+        category_slug: str,
+        sub_slug: str,
+        page: int,
+        sort: str,
+        under_slug: str = "",
+    ) -> str:
+        under_part = f":{under_slug}" if under_slug else ""
+        return (
+            f"{CacheKeys.PREFIX}:storefront:plp:{category_slug}:{sub_slug}"
+            f"{under_part}:{page}:{sort}"
+        )
 
     @staticmethod
     def category(slug: str) -> str:
