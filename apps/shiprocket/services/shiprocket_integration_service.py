@@ -36,6 +36,36 @@ def _clean_phone(value: Any) -> str:
     return digits if len(digits) == 10 else re.sub(r"\D", "", raw)[-10:]
 
 
+def _parse_hsn(value: Any) -> int:
+    raw = (from_db_text(value) or "").strip()
+    if not raw or raw.upper() in {"NA", "N/A", "-", "NONE", "NULL"}:
+        return 0
+    digits = re.sub(r"\D", "", raw)
+    if digits:
+        try:
+            return int(digits)
+        except ValueError:
+            return 0
+    try:
+        return int(float(raw))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    if value in (None, ""):
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    raw = (from_db_text(value) or str(value)).strip()
+    if not raw or raw.upper() in {"NA", "N/A"}:
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 class ShiprocketIntegrationService:
     def __init__(self, client: ShiprocketClient | None = None) -> None:
         self.client = client or shiprocket_client
@@ -154,16 +184,16 @@ class ShiprocketIntegrationService:
 
         order_items = []
         for item in items:
-            unit_price = float(item.get("unit_price") or 0)
+            unit_price = _safe_float(item.get("unit_price"))
             order_items.append(
                 {
                     "name": from_db_text(item.get("product_name")) or "Product",
                     "sku": from_db_text(item.get("sku")) or f"SKU-{item['product_id']}",
                     "units": int(item.get("quantity") or 1),
                     "selling_price": unit_price,
-                    "discount": float(item.get("discount_amount") or 0),
-                    "tax": float(item.get("tax_amount") or 0),
-                    "hsn": int(float(item.get("hsn_code") or 0) or 0),
+                    "discount": _safe_float(item.get("discount_amount")),
+                    "tax": _safe_float(item.get("tax_amount")),
+                    "hsn": _parse_hsn(item.get("hsn_code")),
                 }
             )
 
