@@ -112,6 +112,18 @@ class CustomerRepository:
         """
         return select_one(sql, [normalized])
 
+    def phone_exists(self, phone: str, *, exclude_id: Optional[int] = None) -> bool:
+        sql = f"""
+            SELECT customer_id
+            FROM {self.schema}.{self.table}
+            WHERE phone = %s AND is_deleted = FALSE
+        """
+        params: list[Any] = [phone]
+        if exclude_id:
+            sql += " AND customer_id <> %s"
+            params.append(exclude_id)
+        return select_one(sql, params) is not None
+
     def fetch_by_id(self, customer_id: int) -> Optional[dict[str, Any]]:
         sql = f"""
             SELECT

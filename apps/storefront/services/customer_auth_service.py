@@ -33,12 +33,21 @@ class CustomerAuthService:
             )
         return PHONE_ALIASES.get(normalized, normalized)
 
+    def _normalize_mobile_output(self, phone: Any) -> str:
+        value = from_db_text(phone) or ""
+        if not value or value.upper() in {"NA", "N/A"}:
+            return ""
+        return value
+
+    def _customer_has_mobile(self, phone: Any) -> bool:
+        return bool(self._normalize_mobile_output(phone))
+
     def _serialize_customer(self, row: dict[str, Any]) -> dict[str, Any]:
         return {
             "customerId": str(row["customer_id"]),
             "userId": str(row["user_id"]) if row.get("user_id") else None,
             "name": row.get("full_name") or "Customer",
-            "mobile": row.get("phone") or "",
+            "mobile": self._normalize_mobile_output(row.get("phone")),
             "email": row.get("email") if row.get("email") not in (None, "NA", "") else None,
         }
 
@@ -209,6 +218,80 @@ class CustomerAuthService:
         if not customer:
             raise AuthenticationException("Customer session expired")
         return self._serialize_customer(customer)
+
+    def update_profile(self, customer_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        customer = customer_repository.fetch_by_id(customer_id)
+        if not customer:
+            raise AuthenticationException("Customer session expired")
+
+        customer_updates: dict[str, Any] = {}
+        user_updates: dict[str, Any] = {}
+
+        if "fullName" in payload or "name" in payload:
+            name = (payload.get("fullName") or payload.get("name") or "").strip()
+            if not name:
+                raise ValidationException(
+                    details=[{"field": "fullName", "message": "Full name is required"}]
+                )
+            customer_updates["full_name"] = name
+            user_updates["full_name"] = name
+
+        if "email" in payload:
+            email = (payload.get("email") or "").strip().lower()
+            if email:
+                if customer_repository.email_exists(email, exclude_id=customer_id):
+                    raise ValidationException(
+                        details=[{"field": "email", "message": "This email is already registered"}]
+                    )
+                customer_updates["email"] = email
+                user_updates["email"] = email
+
+        if "phone" in payload or "mobile" in payload:
+            if self._customer_has_mobile(customer.get("phone")):
+                raise ValidationException(
+                    details=[
+                        {
+                            "field": "phone",
+                            "message": "Mobile cannot be changed once set. Contact support if needed.",
+                        }
+                    ]
+                )
+            resolved = self._resolve_phone(payload.get("phone") or payload.get("mobile") or "")
+            if customer_repository.phone_exists(resolved, exclude_id=customer_id):
+                raise ValidationException(
+                    details=[
+                        {
+                            "field": "phone",
+                            "message": "This mobile is already registered to another account",
+                        }
+                    ]
+                )
+            customer_updates["phone"] = resolved
+            user_updates["phone"] = resolved
+
+        if not customer_updates:
+            return self._serialize_customer(customer)
+
+        with atomic() as conn:
+            customer_repository.update(customer_id, customer_updates, conn=conn)
+            user_id = customer.get("user_id")
+            if user_updates and user_id:
+                sets = ", ".join(f"{key} = %s" for key in user_updates)
+                execute(
+                    f"""
+                    UPDATE {self.schema}.usertbl
+                    SET {sets}, updated_at = NOW(), epoch = EXTRACT(EPOCH FROM NOW())
+                    WHERE user_id = %s AND is_deleted = FALSE
+                    """,
+                    [*user_updates.values(), int(user_id)],
+                    conn=conn,
+                    fetch=False,
+                )
+
+        updated = customer_repository.fetch_by_id(customer_id)
+        if not updated:
+            raise AuthenticationException("Customer session expired")
+        return self._serialize_customer(updated)
 
     def _get_customer_role_id(self, conn) -> int:
         row = select_one(

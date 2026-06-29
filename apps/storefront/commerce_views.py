@@ -105,6 +105,13 @@ class StorefrontMeView(APIView):
         data = customer_auth_service.get_me(customer_id)
         return APIResponse.success(data=data, endpoint=request.path)
 
+    def patch(self, request: Request):
+        from apps.storefront.helpers.commerce_context import require_customer_id
+
+        customer_id = require_customer_id(request)
+        data = customer_auth_service.update_profile(customer_id, request.data)
+        return APIResponse.success(data=data, message="Profile updated", endpoint=request.path)
+
 
 @method_decorator(csrf_exempt, name="dispatch")
 class StorefrontCartView(APIView):
