@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Optional
 
 from apps.customers.repositories.customer_repository import customer_repository
@@ -12,15 +11,8 @@ from apps.payments.repositories.payment_repository import payment_repository
 from apps.shiprocket.services.shiprocket_integration_service import shiprocket_integration_service
 from apps.storefront.helpers.commerce_context import normalize_phone
 from core.exceptions.base import NotFoundException, ValidationException
+from core.helpers.datetime_format import serialize_datetime as _format_dt
 from core.helpers.text import from_db_text
-
-
-def _format_dt(value: Any) -> Optional[str]:
-    if not value:
-        return None
-    if isinstance(value, datetime):
-        return value.isoformat()
-    return str(value)
 
 
 def _phone_matches(order_phone: str, input_phone: str) -> bool:

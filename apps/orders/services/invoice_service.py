@@ -1,25 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Optional
 
 from apps.orders.repositories.order_item_repository import order_item_repository
 from apps.orders.repositories.order_repository import order_repository
+from core.constants.company import COMPANY_INFO, COMPANY_STATE
 from core.exceptions.base import NotFoundException
+from core.helpers.datetime_format import serialize_datetime as _format_dt
 from core.helpers.text import from_db_text
 
-
-from core.constants.company import COMPANY_INFO, COMPANY_STATE
-
 DEFAULT_GST_PERCENT = 18.0
-
-
-def _format_dt(value: Any) -> Optional[str]:
-    if not value:
-        return None
-    if isinstance(value, datetime):
-        return value.isoformat()
-    return str(value)
 
 
 def _format_address(prefix: str, row: dict[str, Any]) -> dict[str, Any]:

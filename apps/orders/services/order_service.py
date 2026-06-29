@@ -18,15 +18,8 @@ from apps.products.repositories.product_repository import product_repository
 from core.database import select_one
 from core.database.transaction import atomic
 from core.exceptions.base import NotFoundException, ValidationException
+from core.helpers.datetime_format import serialize_datetime as _format_dt
 from core.helpers.text import from_db_text, to_db_text
-
-
-def _format_dt(value: Any) -> Optional[str]:
-    if not value:
-        return None
-    if isinstance(value, datetime):
-        return value.isoformat()
-    return str(value)
 
 
 def _optional_int(value: Any) -> Optional[int]:
