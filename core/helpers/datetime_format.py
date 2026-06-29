@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
-from zoneinfo import ZoneInfo
 
-IST = ZoneInfo("Asia/Kolkata")
+# India Standard Time — fixed UTC+5:30 (no DST). stdlib-only for Python 3.8 VPS.
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 def serialize_datetime(value: Any) -> Optional[str]:
