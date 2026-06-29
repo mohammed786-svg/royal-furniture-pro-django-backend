@@ -21,6 +21,15 @@ def _change_percent(current: float, previous: float) -> float:
     return round(((current - previous) / previous) * 100, 1)
 
 
+def _initials(name: str) -> str:
+    parts = [part for part in name.strip().split() if part and part != "NA"]
+    if not parts:
+        return "?"
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return f"{parts[0][0]}{parts[-1][0]}".upper()
+
+
 _STATUS_COLORS = {
     "Delivered": "#1CBEAA",
     "Shipped": "#3D5EE1",
@@ -48,6 +57,16 @@ class SalesService:
         previous_orders = int(stats.get("previous_orders") or 0)
         avg_order_value = round(current_revenue / current_orders, 2) if current_orders else 0.0
 
+        catalog = sales_repository.catalog_counts()
+        order_counts = sales_repository.all_time_order_counts()
+        growth = sales_repository.growth_counts(period=period)
+        alert_row = sales_repository.pending_payment_alert()
+
+        total_customers = int(catalog.get("total_customers") or 0)
+        active_customers = int(catalog.get("active_customers") or 0)
+        total_products = int(catalog.get("total_products") or 0)
+        active_products = int(catalog.get("active_products") or 0)
+
         status_rows = sales_repository.orders_by_status(period=period)
         orders_by_status = [
             {
@@ -60,6 +79,20 @@ class SalesService:
             }
             for row in status_rows
         ]
+
+        alert: Optional[dict[str, Any]] = None
+        if alert_row:
+            customer_name = from_db_text(alert_row.get("customer_name")) or "Customer"
+            order_number = from_db_text(alert_row.get("order_number")) or ""
+            alert = {
+                "orderId": str(alert_row["order_id"]),
+                "orderNumber": order_number,
+                "customerName": customer_name,
+                "message": (
+                    f"Payment verification pending for order {order_number} — {customer_name}."
+                ),
+                "avatar": _initials(customer_name),
+            }
 
         return {
             "summary": {
@@ -105,6 +138,28 @@ class SalesService:
                 }
                 for row in sales_repository.recent_orders()
             ],
+            "catalogStats": {
+                "totalCustomers": total_customers,
+                "activeCustomers": active_customers,
+                "inactiveCustomers": max(total_customers - active_customers, 0),
+                "totalProducts": total_products,
+                "activeProducts": active_products,
+                "inactiveProducts": max(total_products - active_products, 0),
+                "customersChangePercent": _change_percent(
+                    float(growth.get("current_customers") or 0),
+                    float(growth.get("previous_customers") or 0),
+                ),
+                "productsChangePercent": _change_percent(
+                    float(growth.get("current_products") or 0),
+                    float(growth.get("previous_products") or 0),
+                ),
+            },
+            "orderStats": {
+                "totalOrders": int(order_counts.get("total_orders") or 0),
+                "activeOrders": int(order_counts.get("active_orders") or 0),
+                "inactiveOrders": int(order_counts.get("inactive_orders") or 0),
+            },
+            "alert": alert,
         }
 
 

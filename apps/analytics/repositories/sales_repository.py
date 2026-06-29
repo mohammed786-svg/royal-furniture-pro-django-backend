@@ -123,5 +123,89 @@ class SalesRepository:
         """
         return select_query(sql, [limit])
 
+    def catalog_counts(self) -> dict[str, Any]:
+        sql = f"""
+            SELECT
+                (SELECT COUNT(*)
+                 FROM {self.schema}.customertbl
+                 WHERE is_deleted = FALSE) AS total_customers,
+                (SELECT COUNT(*)
+                 FROM {self.schema}.customertbl
+                 WHERE is_deleted = FALSE AND is_active = TRUE) AS active_customers,
+                (SELECT COUNT(*)
+                 FROM {self.schema}.producttbl
+                 WHERE is_deleted = FALSE) AS total_products,
+                (SELECT COUNT(*)
+                 FROM {self.schema}.producttbl
+                 WHERE is_deleted = FALSE AND is_active = TRUE) AS active_products
+        """
+        return select_one(sql) or {}
+
+    def all_time_order_counts(self) -> dict[str, Any]:
+        sql = f"""
+            SELECT
+                COUNT(*) AS total_orders,
+                COUNT(
+                    CASE
+                        WHEN LOWER(COALESCE(os.status_name, o.current_status, ''))
+                            NOT IN ('cancelled', 'returned', 'refunded')
+                        THEN 1
+                    END
+                ) AS active_orders,
+                COUNT(
+                    CASE
+                        WHEN LOWER(COALESCE(os.status_name, o.current_status, ''))
+                            IN ('cancelled', 'returned', 'refunded')
+                        THEN 1
+                    END
+                ) AS inactive_orders
+            FROM {self.schema}.ordertbl o
+            LEFT JOIN {self.schema}.order_statustbl os
+                ON os.order_status_id = o.order_status_id
+            WHERE o.is_deleted = FALSE
+        """
+        return select_one(sql) or {}
+
+    def growth_counts(self, *, period: str = "30d") -> dict[str, Any]:
+        days = self._period_days(period)
+        sql = f"""
+            SELECT
+                COUNT(CASE WHEN c.created_at >= NOW() - INTERVAL '{days} days'
+                    THEN 1 END) AS current_customers,
+                COUNT(CASE WHEN c.created_at >= NOW() - INTERVAL '{days * 2} days'
+                    AND c.created_at < NOW() - INTERVAL '{days} days'
+                    THEN 1 END) AS previous_customers,
+                (SELECT COUNT(*)
+                 FROM {self.schema}.producttbl p
+                 WHERE p.is_deleted = FALSE
+                   AND p.created_at >= NOW() - INTERVAL '{days} days') AS current_products,
+                (SELECT COUNT(*)
+                 FROM {self.schema}.producttbl p
+                 WHERE p.is_deleted = FALSE
+                   AND p.created_at >= NOW() - INTERVAL '{days * 2} days'
+                   AND p.created_at < NOW() - INTERVAL '{days} days') AS previous_products
+            FROM {self.schema}.customertbl c
+            WHERE c.is_deleted = FALSE
+        """
+        return select_one(sql) or {}
+
+    def pending_payment_alert(self) -> Optional[dict[str, Any]]:
+        sql = f"""
+            SELECT
+                o.order_id,
+                o.order_number,
+                COALESCE(c.full_name, 'Guest') AS customer_name,
+                pv.payment_verification_id
+            FROM {self.schema}.payment_verificationtbl pv
+            INNER JOIN {self.schema}.ordertbl o ON o.order_id = pv.order_id
+            INNER JOIN {self.schema}.customertbl c ON c.customer_id = o.customer_id
+            WHERE pv.is_deleted = FALSE
+              AND o.is_deleted = FALSE
+              AND pv.verification_status = 'PENDING'
+            ORDER BY pv.created_at DESC
+            LIMIT 1
+        """
+        return select_one(sql)
+
 
 sales_repository = SalesRepository()
