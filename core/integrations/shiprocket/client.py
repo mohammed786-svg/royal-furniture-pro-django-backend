@@ -102,6 +102,36 @@ class ShiprocketClient:
             raise ShiprocketError("Unexpected Shiprocket create-order response")
         return response
 
+    def cancel_orders(self, order_ids: list[int]) -> dict[str, Any]:
+        if not order_ids:
+            return {}
+        response = self._request(
+            "POST",
+            "/v1/external/orders/cancel",
+            body={"ids": order_ids},
+        )
+        return response if isinstance(response, dict) else {}
+
+    def assign_awb(
+        self,
+        shipment_id: int | str,
+        *,
+        courier_id: int | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"shipment_id": int(shipment_id)}
+        if courier_id:
+            body["courier_id"] = int(courier_id)
+        response = self._request("POST", "/v1/external/courier/assign/awb", body=body)
+        if not isinstance(response, dict):
+            raise ShiprocketError("Unexpected Shiprocket assign-AWB response")
+        return response
+
+    def create_return_order(self, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self._request("POST", "/v1/external/orders/create/return", body=payload)
+        if not isinstance(response, dict):
+            raise ShiprocketError("Unexpected Shiprocket return-order response")
+        return response
+
     def track_awb(self, awb: str) -> dict[str, Any]:
         awb_code = (awb or "").strip()
         if not awb_code or awb_code.upper() == "NA":

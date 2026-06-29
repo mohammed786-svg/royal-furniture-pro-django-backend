@@ -166,6 +166,212 @@ class ShiprocketIntegrationService:
         self._record_tracking_snapshot(int(shipment["shipment_id"]), order_id, response)
         return shipment
 
+    def _parse_shiprocket_order_id(self, value: Any) -> int | None:
+        raw = from_db_text(value) or ""
+        if not raw or raw.upper() == "NA":
+            return None
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+
+    def _parse_shipment_external_id(self, value: Any) -> int | None:
+        raw = from_db_text(value) or ""
+        if not raw or raw.upper() == "NA":
+            return None
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+
+    def _extract_awb_from_assign_response(self, response: dict[str, Any]) -> tuple[str, str]:
+        data = response.get("response")
+        if isinstance(data, dict):
+            inner = data.get("data")
+            if isinstance(inner, dict):
+                awb = from_db_text(inner.get("awb_code") or inner.get("awb")) or ""
+                courier = from_db_text(inner.get("courier_name") or inner.get("courier")) or ""
+                if awb or courier:
+                    return awb, courier
+        awb = from_db_text(response.get("awb_code") or response.get("awb")) or ""
+        courier = from_db_text(response.get("courier_name") or response.get("courier")) or ""
+        return awb, courier
+
+    def cancel_for_order(self, order_id: int) -> None:
+        if not self.enabled:
+            return
+        shipment = shipment_repository.fetch_by_order_id(order_id)
+        if not shipment:
+            return
+        sr_order_id = self._parse_shiprocket_order_id(shipment.get("shiprocket_order_id"))
+        if not sr_order_id:
+            return
+        try:
+            self.client.cancel_orders([sr_order_id])
+            shipment_repository.update(
+                int(shipment["shipment_id"]),
+                {"delivery_status": to_db_text("CANCELLED")},
+            )
+        except ShiprocketError:
+            logger.exception("Shiprocket cancel failed for order %s", order_id)
+            raise
+
+    def assign_awb_for_order(self, order_id: int, *, courier_id: int | None = None) -> dict[str, Any]:
+        if not self.enabled:
+            raise ShiprocketError("Shiprocket is not configured")
+
+        shipment = shipment_repository.fetch_by_order_id(order_id)
+        if not shipment:
+            raise ShiprocketError("No Shiprocket shipment found for this order")
+
+        awb = from_db_text(shipment.get("awb_number")) or ""
+        if awb and awb.upper() != "NA":
+            raise ShiprocketError("AWB is already assigned for this shipment")
+
+        external_id = self._parse_shipment_external_id(shipment.get("shipment_id_external"))
+        if not external_id:
+            created = self.create_for_order(order_id)
+            if not created:
+                raise ShiprocketError("Could not create Shiprocket shipment for this order")
+            shipment = created
+            external_id = self._parse_shipment_external_id(shipment.get("shipment_id_external"))
+            if not external_id:
+                raise ShiprocketError("Shiprocket shipment id is missing")
+
+        response = self.client.assign_awb(external_id, courier_id=courier_id)
+        awb_code, courier_name = self._extract_awb_from_assign_response(response)
+        updates: dict[str, Any] = {"raw_response": Json(response)}
+        if awb_code:
+            updates["awb_number"] = to_db_text(awb_code)
+            updates["tracking_number"] = to_db_text(awb_code)
+        if courier_name:
+            updates["courier_name"] = to_db_text(courier_name)
+        if awb_code or courier_name:
+            updates["delivery_status"] = to_db_text("AWB ASSIGNED")
+        shipment_repository.update(int(shipment["shipment_id"]), updates)
+        return shipment_repository.fetch_by_id(int(shipment["shipment_id"])) or shipment
+
+    def _warehouse_return_address(self) -> dict[str, str]:
+        return {
+            "name": getattr(settings, "SHIPROCKET_WAREHOUSE_NAME", "Royal Furniture Pro"),
+            "address": getattr(settings, "SHIPROCKET_WAREHOUSE_ADDRESS", "Warehouse"),
+            "address_2": getattr(settings, "SHIPROCKET_WAREHOUSE_ADDRESS_2", ""),
+            "city": getattr(settings, "SHIPROCKET_WAREHOUSE_CITY", "Mumbai"),
+            "state": getattr(settings, "SHIPROCKET_WAREHOUSE_STATE", "Maharashtra"),
+            "pincode": getattr(settings, "SHIPROCKET_WAREHOUSE_PINCODE", "400001"),
+            "country": getattr(settings, "SHIPROCKET_WAREHOUSE_COUNTRY", "India"),
+            "email": getattr(settings, "SHIPROCKET_WAREHOUSE_EMAIL", "support@royalfurniture.local"),
+            "phone": getattr(settings, "SHIPROCKET_WAREHOUSE_PHONE", "9999999999"),
+        }
+
+    def create_return_for_order(
+        self,
+        order_id: int,
+        *,
+        request_type: str = "RETURN",
+    ) -> dict[str, Any]:
+        if not self.enabled:
+            raise ShiprocketError("Shiprocket is not configured")
+
+        order = order_repository.fetch_by_id(order_id)
+        if not order:
+            raise ShiprocketError("Order not found")
+
+        shipping_address_id = order.get("shipping_address_id")
+        if not shipping_address_id:
+            raise ShiprocketError("Order has no shipping address for return pickup")
+
+        address = address_repository.fetch_by_id(int(shipping_address_id))
+        if not address:
+            raise ShiprocketError("Shipping address not found")
+
+        customer = customer_repository.fetch_by_id(int(order["customer_id"]))
+        items = order_item_repository.list_by_order(order_id)
+        if not items:
+            raise ShiprocketError("Order has no items")
+
+        order_number = from_db_text(order.get("order_number")) or str(order_id)
+        return_ref = f"{order_number}-RET-{datetime.now().strftime('%Y%m%d%H%M%S')}"[:50]
+        full_name = from_db_text(address.get("full_name")) or from_db_text(
+            (customer or {}).get("full_name")
+        ) or "Customer"
+        first_name, last_name = _split_name(full_name)
+        phone = _clean_phone(address.get("phone")) or _clean_phone((customer or {}).get("phone"))
+        if not phone:
+            phone = "9999999999"
+        email = from_db_text((customer or {}).get("email")) or f"{phone}@guest.royalfurniture.local"
+        if not email or email.upper() == "NA":
+            email = f"{phone}@guest.royalfurniture.local"
+
+        line1 = from_db_text(address.get("address_line1")) or ""
+        line2 = from_db_text(address.get("address_line2")) or ""
+        city = from_db_text(address.get("city")) or ""
+        state = from_db_text(address.get("state")) or ""
+        pincode = from_db_text(address.get("pincode")) or ""
+        country = from_db_text(address.get("country")) or "India"
+
+        warehouse = self._warehouse_return_address()
+        order_items = []
+        for item in items:
+            unit_price = _safe_float(item.get("unit_price"))
+            order_items.append(
+                {
+                    "name": from_db_text(item.get("product_name")) or "Product",
+                    "sku": from_db_text(item.get("sku")) or f"SKU-{item['product_id']}",
+                    "units": int(item.get("quantity") or 1),
+                    "selling_price": unit_price,
+                    "discount": _safe_float(item.get("discount_amount")),
+                    "tax": _safe_float(item.get("tax_amount")),
+                    "hsn": _parse_hsn(item.get("hsn_code")),
+                }
+            )
+
+        pkg_weight, pkg_length, pkg_breadth, pkg_height = _order_package_metrics(items)
+        weight = pkg_weight or float(getattr(settings, "SHIPROCKET_DEFAULT_WEIGHT_KG", 1.0))
+        length = pkg_length or float(getattr(settings, "SHIPROCKET_DEFAULT_LENGTH_CM", 10))
+        breadth = pkg_breadth or float(getattr(settings, "SHIPROCKET_DEFAULT_BREADTH_CM", 10))
+        height = pkg_height or float(getattr(settings, "SHIPROCKET_DEFAULT_HEIGHT_CM", 10))
+        weight = max(0.1, weight)
+
+        payload = {
+            "order_id": return_ref,
+            "order_date": datetime.now().strftime("%Y-%m-%d"),
+            "channel_id": "",
+            "pickup_customer_name": first_name,
+            "pickup_last_name": last_name,
+            "pickup_address": line1,
+            "pickup_address_2": line2,
+            "pickup_city": city,
+            "pickup_state": state,
+            "pickup_pincode": pincode,
+            "pickup_country": country,
+            "pickup_email": email,
+            "pickup_phone": phone,
+            "shipping_customer_name": warehouse["name"],
+            "shipping_address": warehouse["address"],
+            "shipping_address_2": warehouse.get("address_2") or "",
+            "shipping_city": warehouse["city"],
+            "shipping_state": warehouse["state"],
+            "shipping_pincode": warehouse["pincode"],
+            "shipping_country": warehouse["country"],
+            "shipping_email": warehouse["email"],
+            "shipping_phone": warehouse["phone"],
+            "order_items": order_items,
+            "payment_method": "Prepaid",
+            "sub_total": float(order.get("subtotal") or 0),
+            "length": length,
+            "breadth": breadth,
+            "height": height,
+            "weight": weight,
+        }
+
+        response = self.client.create_return_order(payload)
+        return {
+            "requestType": request_type.upper(),
+            "returnOrderId": return_ref,
+            "shiprocketResponse": response,
+        }
+
     def _build_create_payload(
         self,
         order: dict[str, Any],

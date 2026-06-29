@@ -280,17 +280,11 @@ class CustomerAuthService:
                 user_updates["email"] = email
 
         if "phone" in payload or "mobile" in payload:
-            if self._customer_has_mobile(customer.get("phone")):
-                raise ValidationException(
-                    details=[
-                        {
-                            "field": "phone",
-                            "message": "Mobile cannot be changed once set. Contact support if needed.",
-                        }
-                    ]
-                )
             resolved = self._resolve_phone(payload.get("phone") or payload.get("mobile") or "")
-            if customer_repository.phone_exists(resolved, exclude_id=customer_id):
+            current_digits = normalize_phone(self._normalize_mobile_output(customer.get("phone")))
+            if resolved != current_digits and customer_repository.phone_exists(
+                resolved, exclude_id=customer_id
+            ):
                 raise ValidationException(
                     details=[
                         {

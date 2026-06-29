@@ -6,6 +6,7 @@ from typing import Any, Optional
 from apps.customers.repositories.customer_repository import customer_repository
 from apps.orders.repositories.order_item_repository import order_item_repository
 from apps.orders.repositories.order_repository import order_repository
+from apps.orders.services.order_lifecycle_service import order_lifecycle_service
 from apps.shiprocket.services.shiprocket_integration_service import shiprocket_integration_service
 from apps.storefront.helpers.commerce_context import normalize_phone
 from core.exceptions.base import NotFoundException, ValidationException
@@ -90,6 +91,10 @@ class StorefrontOrderTrackingService:
         tracking_rows = live_tracking.get("events") or []
 
         items = order_item_repository.list_by_order(order_id)
+        actions = None
+        if customer_id is not None:
+            actions = order_lifecycle_service.get_order_actions(order_id, customer_id=customer_id)
+
         return {
             "order": self._serialize_order_summary(order),
             "items": [
@@ -105,6 +110,7 @@ class StorefrontOrderTrackingService:
             ],
             "shipment": shipment,
             "tracking": tracking_rows,
+            "actions": actions,
         }
 
     def _serialize_order_summary(self, row: dict[str, Any]) -> dict[str, Any]:

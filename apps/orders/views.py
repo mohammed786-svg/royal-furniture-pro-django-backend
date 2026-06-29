@@ -7,6 +7,7 @@ from rest_framework.request import Request
 from rest_framework.views import APIView
 
 from apps.orders.services.invoice_service import invoice_service
+from apps.orders.services.order_lifecycle_service import order_lifecycle_service
 from apps.orders.services.order_options_service import order_options_service
 from apps.orders.services.order_service import order_service
 from apps.orders.services.order_status_service import order_status_service
@@ -44,6 +45,85 @@ def _list_params(request: Request) -> dict:
         "sort_by": request.query_params.get("sortBy", "created_at"),
         "sort_dir": request.query_params.get("sortDir", "desc"),
     }
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class OrderReasonOptionsView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request: Request):
+        _require_admin(request)
+        data = order_lifecycle_service.get_reason_options()
+        return APIResponse.success(data=data, endpoint=request.path)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class OrderActionsView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request: Request, order_id: int):
+        _require_admin(request)
+        data = order_lifecycle_service.get_order_actions(order_id)
+        return APIResponse.success(data=data, endpoint=request.path)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class OrderCancelView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request: Request, order_id: int):
+        user_id = _require_admin(request)
+        item = order_lifecycle_service.cancel_order(
+            order_id,
+            reason_code=request.data.get("reasonCode", ""),
+            reason_text=request.data.get("reasonText", ""),
+            changed_by=user_id,
+        )
+        return APIResponse.success(
+            data={"item": item},
+            message="Order cancelled",
+            endpoint=request.path,
+        )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class OrderAssignAwbView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request: Request, order_id: int):
+        _require_admin(request)
+        courier_id = _optional_int(request.data.get("courierId"))
+        item = order_lifecycle_service.generate_awb(order_id, courier_id=courier_id)
+        return APIResponse.success(
+            data={"item": item},
+            message="AWB generated",
+            endpoint=request.path,
+        )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class OrderReturnExchangeView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request: Request, order_id: int):
+        user_id = _require_admin(request)
+        item = order_lifecycle_service.request_return_or_exchange(
+            order_id,
+            request_type=request.data.get("requestType", "RETURN"),
+            reason_code=request.data.get("reasonCode", ""),
+            reason_text=request.data.get("reasonText", ""),
+            changed_by=user_id,
+        )
+        return APIResponse.success(
+            data={"item": item},
+            message="Return / exchange initiated",
+            endpoint=request.path,
+        )
 
 
 @method_decorator(csrf_exempt, name="dispatch")

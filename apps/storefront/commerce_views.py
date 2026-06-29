@@ -17,6 +17,9 @@ from apps.storefront.services.customer_auth_service import customer_auth_service
 from apps.storefront.services.order_tracking_storefront_service import (
     storefront_order_tracking_service,
 )
+from apps.storefront.services.storefront_order_actions_service import (
+    storefront_order_actions_service,
+)
 from apps.storefront.services.storefront_address_service import storefront_address_service
 from apps.storefront.services.storefront_wishlist_service import storefront_wishlist_service
 from core.exceptions.base import NotFoundException
@@ -164,6 +167,65 @@ class StorefrontTrackOrderView(APIView):
             return APIResponse.success(data=data, endpoint=request.path)
         except NotFoundException as exc:
             return APIResponse.error(message=str(exc), status_code=404, endpoint=request.path)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class StorefrontOrderActionsView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request: Request):
+        from apps.storefront.helpers.commerce_context import require_customer_id
+
+        customer_id = require_customer_id(request)
+        data = storefront_order_actions_service.get_actions(
+            customer_id,
+            order_number=request.query_params.get("orderNumber", ""),
+        )
+        return APIResponse.success(data=data, endpoint=request.path)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class StorefrontOrderCancelView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request: Request):
+        from apps.storefront.helpers.commerce_context import require_customer_id
+
+        customer_id = require_customer_id(request)
+        data = storefront_order_actions_service.cancel_order(
+            customer_id,
+            order_number=request.data.get("orderNumber", ""),
+            order_id=request.data.get("orderId"),
+            reason_code=request.data.get("reasonCode", ""),
+            reason_text=request.data.get("reasonText", ""),
+        )
+        return APIResponse.success(data=data, message="Order cancelled", endpoint=request.path)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class StorefrontOrderReturnExchangeView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request: Request):
+        from apps.storefront.helpers.commerce_context import require_customer_id
+
+        customer_id = require_customer_id(request)
+        data = storefront_order_actions_service.return_or_exchange(
+            customer_id,
+            order_number=request.data.get("orderNumber", ""),
+            order_id=request.data.get("orderId"),
+            request_type=request.data.get("requestType", "RETURN"),
+            reason_code=request.data.get("reasonCode", ""),
+            reason_text=request.data.get("reasonText", ""),
+        )
+        return APIResponse.success(
+            data=data,
+            message="Request submitted",
+            endpoint=request.path,
+        )
 
 
 @method_decorator(csrf_exempt, name="dispatch")
