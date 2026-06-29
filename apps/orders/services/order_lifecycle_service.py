@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Optional
-
-from psycopg2.extras import Json
 
 from apps.orders.constants.order_reasons import (
     AWB_ELIGIBLE_STATUSES,
@@ -17,7 +14,7 @@ from apps.orders.services.order_service import order_service
 from apps.shiprocket.repositories.shipment_repository import shipment_repository
 from apps.shiprocket.services.shiprocket_integration_service import shiprocket_integration_service
 from core.exceptions.base import NotFoundException, ValidationException
-from core.helpers.text import from_db_text, to_db_text
+from core.helpers.text import from_db_text
 from core.integrations.shiprocket.client import ShiprocketError
 
 
@@ -188,53 +185,21 @@ class OrderLifecycleService:
                 details=[{"field": "shiprocket", "message": str(exc)}]
             ) from exc
 
-        from apps.orders.repositories.order_history_repository import order_history_repository
-        from apps.orders.repositories.order_status_repository import order_status_repository
-        from core.database.transaction import atomic
-
-        status_row = order_status_repository.fetch_by_code("RETURNED")
-        if not status_row:
-            raise ValidationException(
-                details=[{"field": "statusCode", "message": "Return status not configured"}]
-            )
-
-        from_status = status
-        with atomic() as conn:
-            order_repository.update(
-                order_id,
-                {
-                    "order_status_id": int(status_row["order_status_id"]),
-                    "current_status": "RETURNED",
+        return order_service.update_order(
+            order_id,
+            {
+                "statusCode": "RETURNED",
+                "changeReason": f"{normalized_type.title()}: {reason}",
+                "metadata": {
+                    "requestType": normalized_type,
+                    "reasonCode": reason_code,
+                    "reason": reason,
+                    "shiprocket": shiprocket_meta,
+                    "source": "customer" if customer_id else "admin",
                 },
-                conn=conn,
-            )
-            order_history_repository.create(
-                {
-                    "order_id": order_id,
-                    "from_status": from_status,
-                    "to_status": "RETURNED",
-                    "changed_by": changed_by,
-                    "change_reason": to_db_text(
-                        f"{normalized_type.title()}: {reason}"
-                    ),
-                    "metadata": Json(
-                        {
-                            "requestType": normalized_type,
-                            "reasonCode": reason_code,
-                            "reason": reason,
-                            "shiprocket": shiprocket_meta,
-                            "source": "customer" if customer_id else "admin",
-                        }
-                    ),
-                    "changed_at": datetime.now(),
-                },
-                conn=conn,
-            )
-
-        from apps.orders.services.order_notification_service import order_notification_service
-
-        order_notification_service.notify_return(order_id, request_type=normalized_type)
-        return order_service.get_order(order_id)
+            },
+            changed_by=changed_by,
+        )
 
 
 order_lifecycle_service = OrderLifecycleService()

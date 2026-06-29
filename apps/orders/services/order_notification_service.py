@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime
 from typing import Any, Optional
 
@@ -7,9 +8,24 @@ from apps.orders.repositories.order_repository import order_repository
 from core.helpers.text import from_db_text
 from core.websocket.broadcast import broadcast_admin_order_event
 
+_DEDUPE_SECONDS = 3.0
+_recent_broadcasts: dict[str, float] = {}
+
 
 class OrderNotificationService:
     def notify(self, *, action: str, order_id: int, extra: Optional[dict[str, Any]] = None) -> None:
+        dedupe_key = f"{order_id}:{action}"
+        now = time.monotonic()
+        last = _recent_broadcasts.get(dedupe_key)
+        if last is not None and now - last < _DEDUPE_SECONDS:
+            return
+        _recent_broadcasts[dedupe_key] = now
+        if len(_recent_broadcasts) > 500:
+            cutoff = now - _DEDUPE_SECONDS
+            stale = [k for k, ts in _recent_broadcasts.items() if ts < cutoff]
+            for k in stale:
+                del _recent_broadcasts[k]
+
         order = order_repository.fetch_by_id(order_id)
         if not order:
             return
