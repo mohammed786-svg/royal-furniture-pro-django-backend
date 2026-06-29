@@ -247,12 +247,14 @@ class ProductRepository:
                 (brand_id, category_id, sub_category_id, under_sub_category_id,
                  name, slug, sku, hsn_code, barcode,
                  short_description, long_description, material, fabric, color,
-                 dimensions, weight, assembly_required, warranty, country_of_origin,
+                 dimensions, length_cm, breadth_cm, height_cm, weight,
+                 assembly_required, warranty, country_of_origin,
                  base_price, sale_price, mrp, gst_percent,
                  seo_title, seo_description, seo_keywords,
                  is_featured, is_new_arrival, is_best_seller, is_trending, is_active)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s)
             RETURNING product_id
         """
         if conn is not None:

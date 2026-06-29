@@ -7,6 +7,7 @@ _CONSTRAINT_FIELD_MESSAGES: dict[str, tuple[str, str]] = {
     "uq_under_sub_categorytbl_slug": ("slug", "Under sub-category slug already exists"),
     "uq_producttbl_slug": ("slug", "Product slug already exists"),
     "uq_producttbl_sku": ("sku", "SKU already exists"),
+    "uq_product_varianttbl_sku": ("sku", "Variant SKU already exists"),
     "uq_brandtbl_slug": ("slug", "Brand slug already exists"),
     "uq_product_tagtbl_slug": ("slug", "Tag slug already exists"),
     "uq_cms_pagetbl_slug": ("slug", "Page slug already exists"),

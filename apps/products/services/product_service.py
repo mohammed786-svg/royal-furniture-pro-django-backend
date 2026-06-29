@@ -11,6 +11,7 @@ from apps.products.repositories.product_child_repository import product_child_re
 from apps.products.repositories.product_repository import product_repository
 from core.database.transaction import atomic
 from core.exceptions.base import NotFoundException, ValidationException
+from core.helpers.dimensions import parse_dimension_payload
 from core.helpers.text import from_db_text, make_slug, save_base64_image, to_db_text, unique_slug
 
 
@@ -179,6 +180,9 @@ class ProductService:
             "fabric": from_db_text(row.get("fabric")),
             "color": from_db_text(row.get("color")),
             "dimensions": from_db_text(row.get("dimensions")),
+            "lengthCm": float(row.get("length_cm") or 0),
+            "breadthCm": float(row.get("breadth_cm") or 0),
+            "heightCm": float(row.get("height_cm") or 0),
             "weight": float(row.get("weight") or 0),
             "assemblyRequired": bool(row.get("assembly_required")),
             "warranty": from_db_text(row.get("warranty")),
@@ -283,6 +287,7 @@ class ProductService:
         if product_repository.sku_exists(sku, exclude_id=product_id):
             raise ValidationException(details=[{"field": "sku", "message": "SKU already exists"}])
 
+        dims = parse_dimension_payload(payload)
         return {
             "brand_id": brand_id,
             "category_id": category_id,
@@ -299,6 +304,9 @@ class ProductService:
             "fabric": to_db_text(payload.get("fabric")),
             "color": to_db_text(payload.get("color")),
             "dimensions": to_db_text(payload.get("dimensions")),
+            "length_cm": dims["length_cm"],
+            "breadth_cm": dims["breadth_cm"],
+            "height_cm": dims["height_cm"],
             "weight": _optional_float(payload.get("weight")),
             "assembly_required": bool(payload.get("assemblyRequired", False)),
             "warranty": to_db_text(payload.get("warranty")),
@@ -319,7 +327,6 @@ class ProductService:
 
     def _save_children(self, product_id: int, payload: dict[str, Any], *, conn) -> None:
         product_child_repository.soft_delete_images(product_id, conn=conn)
-        product_child_repository.soft_delete_variants(product_id, conn=conn)
         product_child_repository.soft_delete_specifications(product_id, conn=conn)
         product_child_repository.soft_delete_features(product_id, conn=conn)
 
@@ -353,28 +360,59 @@ class ProductService:
                 "mrp": payload.get("mrp", 0),
                 "isDefault": True,
             }]
+
+        existing_variants = product_child_repository.list_variants(product_id)
+        existing_by_id = {int(row["product_variant_id"]): row for row in existing_variants}
+        existing_by_sku = {row["sku"]: row for row in existing_variants}
+        matched_ids: set[int] = set()
+
         for variant in variants:
             variant_sku = (variant.get("sku") or "").strip() or f"{payload.get('sku')}-V"
-            product_child_repository.insert_variant(
-                {
-                    "product_id": product_id,
-                    "variant_name": to_db_text(variant.get("variantName") or "Default"),
-                    "sku": to_db_text(variant_sku),
-                    "barcode": to_db_text(variant.get("barcode")),
-                    "color": to_db_text(variant.get("color") or payload.get("color")),
-                    "fabric": to_db_text(variant.get("fabric") or payload.get("fabric")),
-                    "size": to_db_text(variant.get("size")),
-                    "material": to_db_text(variant.get("material") or payload.get("material")),
-                    "price": _optional_float(variant.get("price"), _optional_float(payload.get("basePrice"))),
-                    "sale_price": _optional_float(variant.get("salePrice"), _optional_float(payload.get("salePrice"))),
-                    "mrp": _optional_float(variant.get("mrp"), _optional_float(payload.get("mrp"))),
-                    "weight": _optional_float(variant.get("weight"), _optional_float(payload.get("weight"))),
-                    "dimensions": to_db_text(variant.get("dimensions") or payload.get("dimensions")),
-                    "is_default": bool(variant.get("isDefault", False)),
-                    "is_active": bool(variant.get("isActive", True)),
-                },
-                conn=conn,
-            )
+            variant_id = _optional_int(variant.get("id"))
+            row_data = {
+                "variant_name": to_db_text(variant.get("variantName") or "Default"),
+                "sku": to_db_text(variant_sku),
+                "barcode": to_db_text(variant.get("barcode")),
+                "color": to_db_text(variant.get("color") or payload.get("color")),
+                "fabric": to_db_text(variant.get("fabric") or payload.get("fabric")),
+                "size": to_db_text(variant.get("size")),
+                "material": to_db_text(variant.get("material") or payload.get("material")),
+                "price": _optional_float(variant.get("price"), _optional_float(payload.get("basePrice"))),
+                "sale_price": _optional_float(variant.get("salePrice"), _optional_float(payload.get("salePrice"))),
+                "mrp": _optional_float(variant.get("mrp"), _optional_float(payload.get("mrp"))),
+                "weight": _optional_float(variant.get("weight"), _optional_float(payload.get("weight"))),
+                "dimensions": to_db_text(variant.get("dimensions") or payload.get("dimensions")),
+                "is_default": bool(variant.get("isDefault", False)),
+                "is_active": bool(variant.get("isActive", True)),
+            }
+
+            target_id: Optional[int] = None
+            if variant_id and variant_id in existing_by_id:
+                target_id = variant_id
+            elif variant_sku in existing_by_sku:
+                target_id = int(existing_by_sku[variant_sku]["product_variant_id"])
+
+            if target_id is not None:
+                if product_child_repository.variant_sku_exists(variant_sku, exclude_id=target_id):
+                    raise ValidationException(
+                        details=[{"field": "variants", "message": f"Variant SKU '{variant_sku}' already exists"}]
+                    )
+                product_child_repository.update_variant(target_id, row_data, conn=conn)
+                matched_ids.add(target_id)
+            else:
+                if product_child_repository.variant_sku_exists(variant_sku):
+                    raise ValidationException(
+                        details=[{"field": "variants", "message": f"Variant SKU '{variant_sku}' already exists"}]
+                    )
+                product_child_repository.insert_variant(
+                    {"product_id": product_id, **row_data},
+                    conn=conn,
+                )
+
+        for row in existing_variants:
+            variant_id = int(row["product_variant_id"])
+            if variant_id not in matched_ids:
+                product_child_repository.soft_delete_variant(variant_id, conn=conn)
 
         for idx, spec in enumerate(payload.get("specifications") or []):
             key = (spec.get("specKey") or "").strip()

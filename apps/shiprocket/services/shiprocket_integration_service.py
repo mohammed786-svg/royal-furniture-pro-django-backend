@@ -12,6 +12,7 @@ from apps.customers.repositories.address_repository import address_repository
 from apps.customers.repositories.customer_repository import customer_repository
 from apps.orders.repositories.order_item_repository import order_item_repository
 from apps.orders.repositories.order_repository import order_repository
+from apps.products.repositories.product_repository import product_repository
 from apps.shiprocket.repositories.shipment_repository import shipment_repository
 from apps.shiprocket.repositories.shipment_tracking_repository import (
     shipment_tracking_repository,
@@ -64,6 +65,26 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return float(raw)
     except (TypeError, ValueError):
         return default
+
+
+def _order_package_metrics(items: list[dict[str, Any]]) -> tuple[float, float, float, float]:
+    total_weight = 0.0
+    max_length = 0.0
+    max_breadth = 0.0
+    max_height = 0.0
+    for item in items:
+        qty = int(item.get("quantity") or 1)
+        product_id = item.get("product_id")
+        if not product_id:
+            continue
+        product = product_repository.fetch_by_id(int(product_id))
+        if not product:
+            continue
+        total_weight += _safe_float(product.get("weight")) * qty
+        max_length = max(max_length, _safe_float(product.get("length_cm")))
+        max_breadth = max(max_breadth, _safe_float(product.get("breadth_cm")))
+        max_height = max(max_height, _safe_float(product.get("height_cm")))
+    return total_weight, max_length, max_breadth, max_height
 
 
 class ShiprocketIntegrationService:
@@ -205,10 +226,12 @@ class ShiprocketIntegrationService:
             order_date = datetime.now().strftime("%Y-%m-%d %H:%M")
 
         pickup_location = getattr(settings, "SHIPROCKET_PICKUP_LOCATION", "Primary")
-        weight = float(getattr(settings, "SHIPROCKET_DEFAULT_WEIGHT_KG", 1.0))
-        length = float(getattr(settings, "SHIPROCKET_DEFAULT_LENGTH_CM", 10))
-        breadth = float(getattr(settings, "SHIPROCKET_DEFAULT_BREADTH_CM", 10))
-        height = float(getattr(settings, "SHIPROCKET_DEFAULT_HEIGHT_CM", 10))
+        pkg_weight, pkg_length, pkg_breadth, pkg_height = _order_package_metrics(items)
+        weight = pkg_weight or float(getattr(settings, "SHIPROCKET_DEFAULT_WEIGHT_KG", 1.0))
+        length = pkg_length or float(getattr(settings, "SHIPROCKET_DEFAULT_LENGTH_CM", 10))
+        breadth = pkg_breadth or float(getattr(settings, "SHIPROCKET_DEFAULT_BREADTH_CM", 10))
+        height = pkg_height or float(getattr(settings, "SHIPROCKET_DEFAULT_HEIGHT_CM", 10))
+        weight = max(0.1, weight)
 
         return {
             "order_id": order_number[:50],

@@ -120,5 +120,57 @@ class ShiprocketClient:
             raise ShiprocketError("Unexpected Shiprocket shipment tracking response")
         return response
 
+    def list_orders(self, *, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+        query = ""
+        if params:
+            from urllib.parse import urlencode
+
+            filtered = {k: v for k, v in params.items() if v not in (None, "")}
+            if filtered:
+                query = "?" + urlencode(filtered)
+        response = self._request("GET", f"/v1/external/orders{query}")
+        if not isinstance(response, dict):
+            raise ShiprocketError("Unexpected Shiprocket orders list response")
+        return response
+
+    def get_order(self, shiprocket_order_id: str | int) -> dict[str, Any]:
+        response = self._request("GET", f"/v1/external/orders/show/{shiprocket_order_id}")
+        if not isinstance(response, dict):
+            raise ShiprocketError("Unexpected Shiprocket order detail response")
+        return response
+
+    def check_serviceability(
+        self,
+        *,
+        pickup_postcode: str | int,
+        delivery_postcode: str | int,
+        weight: float,
+        cod: int = 0,
+        length: Optional[float] = None,
+        breadth: Optional[float] = None,
+        height: Optional[float] = None,
+    ) -> dict[str, Any]:
+        from urllib.parse import urlencode
+
+        params: dict[str, Any] = {
+            "pickup_postcode": str(pickup_postcode).strip(),
+            "delivery_postcode": str(delivery_postcode).strip(),
+            "weight": weight,
+            "cod": cod,
+        }
+        if length:
+            params["length"] = length
+        if breadth:
+            params["breadth"] = breadth
+        if height:
+            params["height"] = height
+        response = self._request(
+            "GET",
+            f"/v1/external/courier/serviceability/?{urlencode(params)}",
+        )
+        if not isinstance(response, dict):
+            raise ShiprocketError("Unexpected Shiprocket serviceability response")
+        return response
+
 
 shiprocket_client = ShiprocketClient()

@@ -60,13 +60,34 @@ If Shiprocket fails, the storefront order still succeeds (error is logged).
 - **Track order:** `GET /api/v1/storefront/orders/track/?orderNumber=RF-ORD-...&mobile=9876543210`
 - **My orders (logged in):** `GET /api/v1/storefront/orders/`
 
-## 6. Admin
+## 6. Admin Shiprocket panel
+
+Under **SHIPROCKET** in the admin sidebar (below Orders):
+
+| Page | API |
+|------|-----|
+| SR Orders | `GET /api/v1/shipping/shiprocket/orders/` |
+| Order detail | `GET /api/v1/shipping/shiprocket/orders/{sr_order_id}/` |
+| SR Tracking | `GET /api/v1/shipping/shiprocket/track/?awb=` |
+| SR Rate Calculator | `GET /api/v1/shipping/shiprocket/serviceability/` |
+
+## 7. Product package dimensions
+
+Run migration on PostgreSQL:
+
+```bash
+psql -U postgres -d royal_furniture_db -f database/migrations_sql/add_product_shipping_dimensions.sql
+```
+
+In **Catalog → Products → Physical Details**, enter package length/breadth/height in cm, inches, feet, or meters. Values are stored in **cm** and sent to Shiprocket on checkout.
+
+## 8. Admin (local shipments)
 
 - **Orders → order detail → Tracking tab:** internal order tracking + Shiprocket shipment events
 - **Shipping → Shipments:** all Shiprocket-linked shipments
 - **Shipping → Tracking:** courier scan timeline
 
-## 7. Troubleshooting
+## 9. Troubleshooting
 
 | Issue | Check |
 |-------|--------|

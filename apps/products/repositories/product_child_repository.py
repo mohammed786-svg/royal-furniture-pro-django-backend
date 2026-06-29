@@ -57,10 +57,24 @@ class ProductChildRepository:
         """
         execute(sql, [product_id], conn=conn)
 
+    def soft_delete_variant(self, variant_id: int, *, conn: PgConnection) -> None:
+        sql = f"""
+            UPDATE {self.schema}.product_varianttbl
+            SET is_deleted = TRUE,
+                is_active = FALSE,
+                sku = sku || '__del__' || product_variant_id::text,
+                updated_at = NOW()
+            WHERE product_variant_id = %s AND is_deleted = FALSE
+        """
+        execute(sql, [variant_id], conn=conn)
+
     def soft_delete_variants(self, product_id: int, *, conn: PgConnection) -> None:
         sql = f"""
             UPDATE {self.schema}.product_varianttbl
-            SET is_deleted = TRUE, is_active = FALSE, updated_at = NOW()
+            SET is_deleted = TRUE,
+                is_active = FALSE,
+                sku = sku || '__del__' || product_variant_id::text,
+                updated_at = NOW()
             WHERE product_id = %s AND is_deleted = FALSE
         """
         execute(sql, [product_id], conn=conn)
@@ -99,6 +113,45 @@ class ProductChildRepository:
         """
         execute(sql, list(data.values()), conn=conn)
 
+    def update_variant(self, variant_id: int, data: dict[str, Any], *, conn: PgConnection) -> None:
+        sql = f"""
+            UPDATE {self.schema}.product_varianttbl
+            SET variant_name = %s,
+                sku = %s,
+                barcode = %s,
+                color = %s,
+                fabric = %s,
+                size = %s,
+                material = %s,
+                price = %s,
+                sale_price = %s,
+                mrp = %s,
+                weight = %s,
+                dimensions = %s,
+                is_default = %s,
+                is_active = %s,
+                updated_at = NOW()
+            WHERE product_variant_id = %s AND is_deleted = FALSE
+        """
+        params = [
+            data["variant_name"],
+            data["sku"],
+            data["barcode"],
+            data["color"],
+            data["fabric"],
+            data["size"],
+            data["material"],
+            data["price"],
+            data["sale_price"],
+            data["mrp"],
+            data["weight"],
+            data["dimensions"],
+            data["is_default"],
+            data["is_active"],
+            variant_id,
+        ]
+        execute(sql, params, conn=conn)
+
     def insert_specification(self, data: dict[str, Any], *, conn: PgConnection) -> None:
         sql = f"""
             INSERT INTO {self.schema}.product_specificationtbl
@@ -116,14 +169,18 @@ class ProductChildRepository:
         """
         execute(sql, list(data.values()), conn=conn)
 
-    def variant_sku_exists(self, sku: str) -> bool:
+    def variant_sku_exists(self, sku: str, *, exclude_id: Optional[int] = None) -> bool:
         sql = f"""
             SELECT product_variant_id FROM {self.schema}.product_varianttbl
             WHERE sku = %s AND is_deleted = FALSE
         """
         from core.database import select_one
 
-        return select_one(sql, [sku]) is not None
+        params: list[Any] = [sku]
+        if exclude_id:
+            sql += " AND product_variant_id <> %s"
+            params.append(exclude_id)
+        return select_one(sql, params) is not None
 
 
 product_child_repository = ProductChildRepository()

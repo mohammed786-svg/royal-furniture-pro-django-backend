@@ -6,11 +6,13 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
+from apps.shiprocket.services.shiprocket_admin_service import shiprocket_admin_service
 from apps.shiprocket.services.shiprocket_integration_service import shiprocket_integration_service
 from apps.shiprocket.services.shipment_service import shipment_service
 from apps.shiprocket.services.shipment_tracking_service import shipment_tracking_service
 from apps.shiprocket.services.shipping_options_service import shipping_options_service
-from core.exceptions.base import AuthenticationException
+from core.exceptions.base import AuthenticationException, ValidationException
+from core.integrations.shiprocket.client import ShiprocketError
 from core.pagination import PaginationParams
 from core.responses.formatter import APIResponse
 
@@ -170,3 +172,104 @@ class ShippingOptionsView(APIView):
             data=shipping_options_service.get_options(),
             endpoint=request.path,
         )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class ShiprocketOrdersListView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request: Request):
+        _require_admin(request)
+        params = _list_params(request)
+        params["date_from"] = (request.query_params.get("from") or "").strip()
+        params["date_to"] = (request.query_params.get("to") or "").strip()
+        try:
+            data = shiprocket_admin_service.list_orders(**params)
+            return APIResponse.success(data=data, endpoint=request.path)
+        except ShiprocketError as exc:
+            return APIResponse.error(message=str(exc), status_code=502, endpoint=request.path)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class ShiprocketOrderDetailView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request: Request, shiprocket_order_id: str):
+        _require_admin(request)
+        try:
+            data = shiprocket_admin_service.get_order(shiprocket_order_id)
+            return APIResponse.success(data=data, endpoint=request.path)
+        except ShiprocketError as exc:
+            status = 404 if exc.status_code == 404 else 502
+            return APIResponse.error(message=str(exc), status_code=status, endpoint=request.path)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class ShiprocketTrackView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request: Request):
+        _require_admin(request)
+        awb = (request.query_params.get("awb") or "").strip()
+        shipment_id = (request.query_params.get("shipmentId") or "").strip()
+        if not awb and not shipment_id:
+            raise ValidationException(
+                details=[{"field": "awb", "message": "AWB or shipment ID is required"}]
+            )
+        try:
+            if awb:
+                data = shiprocket_admin_service.track_awb(awb)
+            else:
+                data = shiprocket_admin_service.track_shipment(shipment_id)
+            return APIResponse.success(data=data, endpoint=request.path)
+        except ShiprocketError as exc:
+            return APIResponse.error(message=str(exc), status_code=502, endpoint=request.path)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class ShiprocketServiceabilityView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request: Request):
+        _require_admin(request)
+        pickup = (request.query_params.get("pickupPostcode") or "").strip()
+        delivery = (request.query_params.get("deliveryPostcode") or "").strip()
+        weight = request.query_params.get("weight")
+        if not pickup or not delivery:
+            raise ValidationException(
+                details=[{"field": "pickupPostcode", "message": "Pickup and delivery pincodes are required"}]
+            )
+        try:
+            weight_val = float(weight) if weight not in (None, "") else 1.0
+        except (TypeError, ValueError):
+            weight_val = 1.0
+        cod = (request.query_params.get("cod") or "0").strip() in {"1", "true", "True"}
+        length = _optional_float(request.query_params.get("lengthCm"))
+        breadth = _optional_float(request.query_params.get("breadthCm"))
+        height = _optional_float(request.query_params.get("heightCm"))
+        try:
+            data = shiprocket_admin_service.calculate_rates(
+                pickup_postcode=pickup,
+                delivery_postcode=delivery,
+                weight=weight_val,
+                cod=cod,
+                length=length,
+                breadth=breadth,
+                height=height,
+            )
+            return APIResponse.success(data=data, endpoint=request.path)
+        except ShiprocketError as exc:
+            return APIResponse.error(message=str(exc), status_code=502, endpoint=request.path)
+
+
+def _optional_float(value) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
