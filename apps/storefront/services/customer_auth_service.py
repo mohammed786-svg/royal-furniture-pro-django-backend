@@ -16,6 +16,7 @@ from core.database.transaction import atomic
 from core.database.raw_queries import execute
 from core.exceptions.base import AuthenticationException, ValidationException
 from core.helpers.ip import get_client_ip
+from core.helpers.text import from_db_text
 
 
 DEMO_OTP = "123456"
