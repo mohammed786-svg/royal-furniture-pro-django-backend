@@ -6,6 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
+from apps.shiprocket.services.shiprocket_integration_service import shiprocket_integration_service
 from apps.shiprocket.services.shipment_service import shipment_service
 from apps.shiprocket.services.shipment_tracking_service import shipment_tracking_service
 from apps.shiprocket.services.shipping_options_service import shipping_options_service
@@ -143,6 +144,19 @@ class ShipmentTrackingDetailView(APIView):
             message="Shipment tracking record deleted",
             endpoint=request.path,
         )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class ShiprocketWebhookView(APIView):
+    """Shiprocket tracking webhook — configure in Shiprocket panel."""
+
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request: Request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        shiprocket_integration_service.handle_webhook(payload)
+        return APIResponse.success(data={"received": True}, endpoint=request.path)
 
 
 @method_decorator(csrf_exempt, name="dispatch")

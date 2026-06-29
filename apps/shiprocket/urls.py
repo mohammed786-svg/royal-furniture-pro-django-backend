@@ -5,10 +5,12 @@ from apps.shiprocket.views import (
     ShipmentListCreateView,
     ShipmentTrackingDetailView,
     ShipmentTrackingListCreateView,
+    ShiprocketWebhookView,
     ShippingOptionsView,
 )
 
 urlpatterns = [
+    path("webhook/shiprocket/", ShiprocketWebhookView.as_view(), name="shiprocket-webhook"),
     path("meta-options/", ShippingOptionsView.as_view(), name="shipping-meta-options"),
     path("shipments/", ShipmentListCreateView.as_view(), name="shipment-list"),
     path("shipments/<int:shipment_id>/", ShipmentDetailView.as_view(), name="shipment-detail"),

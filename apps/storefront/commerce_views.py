@@ -14,8 +14,12 @@ from apps.storefront.helpers.commerce_context import (
 from apps.storefront.services.cart_service import cart_service
 from apps.storefront.services.checkout_service import checkout_service
 from apps.storefront.services.customer_auth_service import customer_auth_service
+from apps.storefront.services.order_tracking_storefront_service import (
+    storefront_order_tracking_service,
+)
 from apps.storefront.services.storefront_address_service import storefront_address_service
 from apps.storefront.services.storefront_wishlist_service import storefront_wishlist_service
+from core.exceptions.base import NotFoundException
 from core.responses.formatter import APIResponse
 
 
@@ -111,6 +115,41 @@ class StorefrontMeView(APIView):
         customer_id = require_customer_id(request)
         data = customer_auth_service.update_profile(customer_id, request.data)
         return APIResponse.success(data=data, message="Profile updated", endpoint=request.path)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class StorefrontOrdersView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request: Request):
+        from apps.storefront.helpers.commerce_context import require_customer_id
+
+        customer_id = require_customer_id(request)
+        page = max(1, int(request.query_params.get("page", 1)))
+        page_size = min(50, max(1, int(request.query_params.get("pageSize", 20))))
+        data = storefront_order_tracking_service.list_customer_orders(
+            customer_id,
+            page=page,
+            page_size=page_size,
+        )
+        return APIResponse.success(data=data, endpoint=request.path)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class StorefrontTrackOrderView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request: Request):
+        try:
+            data = storefront_order_tracking_service.track_order(
+                order_number=request.query_params.get("orderNumber", ""),
+                mobile=request.query_params.get("mobile", ""),
+            )
+            return APIResponse.success(data=data, endpoint=request.path)
+        except NotFoundException as exc:
+            return APIResponse.error(message=str(exc), status_code=404, endpoint=request.path)
 
 
 @method_decorator(csrf_exempt, name="dispatch")

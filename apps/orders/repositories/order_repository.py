@@ -115,6 +115,16 @@ class OrderRepository:
         """
         return select_one(sql, [order_id])
 
+    def fetch_by_order_number(self, order_number: str) -> Optional[dict[str, Any]]:
+        sql = f"""
+            SELECT {self._SELECT_COLUMNS}
+            {self._from_join()}
+            WHERE UPPER(o.order_number) = UPPER(%s) AND o.is_deleted = FALSE
+            ORDER BY o.order_id DESC
+            LIMIT 1
+        """
+        return select_one(sql, [order_number])
+
     def count_orders_for_date_prefix(self, prefix: str, *, conn: Optional[PgConnection] = None) -> int:
         sql = f"""
             SELECT COUNT(*) AS total

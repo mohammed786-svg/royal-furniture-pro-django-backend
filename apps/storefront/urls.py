@@ -9,7 +9,9 @@ from apps.storefront.commerce_views import (
     StorefrontCheckoutView,
     StorefrontGoogleAuthView,
     StorefrontMeView,
+    StorefrontOrdersView,
     StorefrontSendOtpView,
+    StorefrontTrackOrderView,
     StorefrontVerifyOtpView,
     StorefrontWishlistProductView,
     StorefrontWishlistView,
@@ -61,4 +63,6 @@ urlpatterns = [
         name="storefront-address-detail",
     ),
     path("checkout/", StorefrontCheckoutView.as_view(), name="storefront-checkout"),
+    path("orders/", StorefrontOrdersView.as_view(), name="storefront-orders"),
+    path("orders/track/", StorefrontTrackOrderView.as_view(), name="storefront-track-order"),
 ]

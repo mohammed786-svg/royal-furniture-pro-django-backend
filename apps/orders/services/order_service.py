@@ -126,6 +126,8 @@ class OrderService:
     def _serialize_shipment(self, row: dict[str, Any]) -> dict[str, Any]:
         return {
             "id": str(row["shipment_id"]),
+            "shiprocketOrderId": from_db_text(row.get("shiprocket_order_id")),
+            "shipmentIdExternal": from_db_text(row.get("shipment_id_external")),
             "awbNumber": from_db_text(row.get("awb_number")),
             "courierName": from_db_text(row.get("courier_name")),
             "trackingNumber": from_db_text(row.get("tracking_number")),

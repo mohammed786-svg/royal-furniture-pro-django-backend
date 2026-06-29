@@ -1,0 +1,139 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any, Optional
+
+from apps.customers.repositories.customer_repository import customer_repository
+from apps.orders.repositories.order_item_repository import order_item_repository
+from apps.orders.repositories.order_repository import order_repository
+from apps.shiprocket.repositories.shipment_repository import shipment_repository
+from apps.shiprocket.repositories.shipment_tracking_repository import (
+    shipment_tracking_repository,
+)
+from apps.shiprocket.services.shiprocket_integration_service import shiprocket_integration_service
+from apps.storefront.helpers.commerce_context import normalize_phone
+from core.exceptions.base import NotFoundException, ValidationException
+from core.helpers.text import from_db_text
+
+
+def _format_dt(value: Any) -> Optional[str]:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
+
+def _phone_matches(order_phone: str, input_phone: str) -> bool:
+    a = normalize_phone(order_phone or "")
+    b = normalize_phone(input_phone or "")
+    if not a or not b:
+        return False
+    return a == b
+
+
+class StorefrontOrderTrackingService:
+    def list_customer_orders(self, customer_id: int, *, page: int = 1, page_size: int = 20) -> dict[str, Any]:
+        rows, total = order_repository.list_paginated(
+            page=page,
+            page_size=page_size,
+            customer_id=customer_id,
+            sort_by="created_at",
+            sort_dir="desc",
+        )
+        items = [self._serialize_order_summary(row) for row in rows]
+        return {
+            "items": items,
+            "pagination": {
+                "page": page,
+                "pageSize": page_size,
+                "total": total,
+                "totalPages": max(1, (total + page_size - 1) // page_size),
+            },
+        }
+
+    def track_order(self, *, order_number: str, mobile: str) -> dict[str, Any]:
+        order_number = (order_number or "").strip().upper()
+        if not order_number:
+            raise ValidationException(
+                details=[{"field": "orderNumber", "message": "Order ID is required"}]
+            )
+
+        mobile_digits = normalize_phone(mobile or "")
+        if len(mobile_digits) != 10:
+            raise ValidationException(
+                details=[{"field": "mobile", "message": "Enter a valid 10-digit mobile number"}]
+            )
+
+        order = order_repository.fetch_by_order_number(order_number)
+        if not order:
+            raise NotFoundException("Order not found")
+
+        customer = customer_repository.fetch_by_id(int(order["customer_id"]))
+        customer_phone = from_db_text((customer or {}).get("phone")) or ""
+        shipping_phone = from_db_text(order.get("shipping_phone")) or ""
+        if not (_phone_matches(customer_phone, mobile_digits) or _phone_matches(shipping_phone, mobile_digits)):
+            raise NotFoundException("Order not found")
+
+        order_id = int(order["order_id"])
+        shipment = shipment_repository.fetch_by_order_id(order_id)
+        tracking_rows = []
+        if shipment:
+            tracking_rows = shiprocket_integration_service.sync_tracking_for_order(order_id)
+        else:
+            tracking_rows = shipment_tracking_repository.list_paginated(
+                page=1, page_size=100, order_id=order_id
+            )[0]
+
+        items = order_item_repository.list_by_order(order_id)
+        return {
+            "order": self._serialize_order_summary(order),
+            "items": [
+                {
+                    "id": str(item["order_item_id"]),
+                    "name": from_db_text(item.get("product_name")) or "",
+                    "quantity": int(item.get("quantity") or 1),
+                    "unitPrice": float(item.get("unit_price") or 0),
+                    "lineTotal": float(item.get("line_total") or 0),
+                    "sku": from_db_text(item.get("sku")) or "",
+                }
+                for item in items
+            ],
+            "shipment": self._serialize_shipment(shipment) if shipment else None,
+            "tracking": [self._serialize_tracking(row) for row in tracking_rows],
+        }
+
+    def _serialize_order_summary(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "orderId": str(row["order_id"]),
+            "orderNumber": from_db_text(row.get("order_number")) or "",
+            "status": from_db_text(row.get("current_status")) or "",
+            "statusName": from_db_text(row.get("status_name")) or "",
+            "totalAmount": float(row.get("total_amount") or 0),
+            "createdAt": _format_dt(row.get("created_at")),
+            "paymentMethod": from_db_text(row.get("payment_method")) or "",
+        }
+
+    def _serialize_shipment(self, row: dict[str, Any]) -> dict[str, Any]:
+        awb = from_db_text(row.get("awb_number")) or ""
+        return {
+            "id": str(row["shiprocket_order_id"]) if row.get("shiprocket_order_id") else None,
+            "shiprocketOrderId": from_db_text(row.get("shiprocket_order_id")),
+            "awbNumber": awb if awb.upper() != "NA" else "",
+            "courierName": from_db_text(row.get("courier_name")) or "",
+            "deliveryStatus": from_db_text(row.get("delivery_status")) or "",
+            "trackingNumber": from_db_text(row.get("tracking_number")) or "",
+            "estimatedDeliveryDate": _format_dt(row.get("estimated_delivery_date")),
+        }
+
+    def _serialize_tracking(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "statusCode": from_db_text(row.get("status_code")) or "",
+            "statusMessage": from_db_text(row.get("status_message")) or "",
+            "location": from_db_text(row.get("location")) or "",
+            "trackedAt": _format_dt(row.get("tracked_at")),
+            "source": from_db_text(row.get("source")) or "SHIPROCKET",
+        }
+
+
+storefront_order_tracking_service = StorefrontOrderTrackingService()

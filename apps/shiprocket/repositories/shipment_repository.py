@@ -102,6 +102,36 @@ class ShipmentRepository:
         rows = select_query(sql, [*params, page_size, offset])
         return rows, total
 
+    def fetch_by_order_id(self, order_id: int) -> Optional[dict[str, Any]]:
+        sql = f"""
+            SELECT {self._SELECT_COLUMNS}
+            {self._from_clause()}
+            WHERE s.order_id = %s AND s.is_deleted = FALSE
+            ORDER BY s.shipment_id DESC
+            LIMIT 1
+        """
+        return select_one(sql, [order_id])
+
+    def fetch_by_shiprocket_order_id(self, shiprocket_order_id: str) -> Optional[dict[str, Any]]:
+        sql = f"""
+            SELECT {self._SELECT_COLUMNS}
+            {self._from_clause()}
+            WHERE s.shiprocket_order_id = %s AND s.is_deleted = FALSE
+            ORDER BY s.shipment_id DESC
+            LIMIT 1
+        """
+        return select_one(sql, [shiprocket_order_id])
+
+    def fetch_by_awb(self, awb_number: str) -> Optional[dict[str, Any]]:
+        sql = f"""
+            SELECT {self._SELECT_COLUMNS}
+            {self._from_clause()}
+            WHERE s.awb_number = %s AND s.is_deleted = FALSE
+            ORDER BY s.shipment_id DESC
+            LIMIT 1
+        """
+        return select_one(sql, [awb_number])
+
     def fetch_by_id(self, shipment_id: int) -> Optional[dict[str, Any]]:
         sql = f"""
             SELECT {self._SELECT_COLUMNS}

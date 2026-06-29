@@ -198,13 +198,28 @@ class CheckoutService:
                 )
 
         detail = order_service.get_order(order_id)
-        return {
+        result = {
             "orderId": str(order_id),
             "orderNumber": detail.get("orderNumber") or order_number,
             "status": detail.get("currentStatus") or status_code,
             "totalAmount": detail.get("totalAmount") or total_amount,
             "paymentStatus": "PENDING",
         }
+
+        try:
+            from apps.shiprocket.services.shiprocket_integration_service import (
+                shiprocket_integration_service,
+            )
+
+            shiprocket_integration_service.create_for_order(order_id)
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).exception(
+                "Shiprocket order sync failed for order %s", order_id
+            )
+
+        return result
 
 
 checkout_service = CheckoutService()
