@@ -214,6 +214,38 @@ class CustomerAuthService:
             "expiresInMinutes": settings.JWT_ACCESS_TOKEN_MINUTES,
         }
 
+    def refresh(self, refresh_token: str) -> dict[str, Any]:
+        token = (refresh_token or "").strip()
+        if not token:
+            raise AuthenticationException("Refresh token missing")
+
+        payload = jwt_handler.verify(token, token_type="refresh")
+        if not payload or not payload.get("customer_id"):
+            raise AuthenticationException("Session expired. Please sign in again.")
+
+        customer_id = int(payload["customer_id"])
+        customer = customer_repository.fetch_by_id(customer_id)
+        if not customer:
+            raise AuthenticationException("Customer account not found")
+
+        user_id = customer.get("user_id")
+        resolved = customer.get("phone") or ""
+        session_payload = {
+            "user_id": int(user_id) if user_id else None,
+            "customer_id": customer_id,
+            "role": "CUSTOMER",
+            "phone": resolved,
+        }
+        access_token = jwt_handler.create_access_token(session_payload, admin=False)
+        new_refresh = jwt_handler.create_refresh_token(session_payload)
+
+        return {
+            "user": self._serialize_customer(customer),
+            "accessToken": access_token,
+            "refreshToken": new_refresh,
+            "expiresInMinutes": settings.JWT_ACCESS_TOKEN_MINUTES,
+        }
+
     def get_me(self, customer_id: int) -> dict[str, Any]:
         customer = customer_repository.fetch_by_id(customer_id)
         if not customer:

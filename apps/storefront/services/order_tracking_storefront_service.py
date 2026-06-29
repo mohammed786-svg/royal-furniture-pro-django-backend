@@ -6,10 +6,6 @@ from typing import Any, Optional
 from apps.customers.repositories.customer_repository import customer_repository
 from apps.orders.repositories.order_item_repository import order_item_repository
 from apps.orders.repositories.order_repository import order_repository
-from apps.shiprocket.repositories.shipment_repository import shipment_repository
-from apps.shiprocket.repositories.shipment_tracking_repository import (
-    shipment_tracking_repository,
-)
 from apps.shiprocket.services.shiprocket_integration_service import shiprocket_integration_service
 from apps.storefront.helpers.commerce_context import normalize_phone
 from core.exceptions.base import NotFoundException, ValidationException
@@ -52,38 +48,46 @@ class StorefrontOrderTrackingService:
             },
         }
 
-    def track_order(self, *, order_number: str, mobile: str) -> dict[str, Any]:
+    def track_order(
+        self,
+        *,
+        order_number: str,
+        mobile: str = "",
+        customer_id: int | None = None,
+    ) -> dict[str, Any]:
         order_number = (order_number or "").strip().upper()
         if not order_number:
             raise ValidationException(
                 details=[{"field": "orderNumber", "message": "Order ID is required"}]
             )
 
-        mobile_digits = normalize_phone(mobile or "")
-        if len(mobile_digits) != 10:
-            raise ValidationException(
-                details=[{"field": "mobile", "message": "Enter a valid 10-digit mobile number"}]
-            )
-
         order = order_repository.fetch_by_order_number(order_number)
         if not order:
             raise NotFoundException("Order not found")
 
-        customer = customer_repository.fetch_by_id(int(order["customer_id"]))
-        customer_phone = from_db_text((customer or {}).get("phone")) or ""
-        shipping_phone = from_db_text(order.get("shipping_phone")) or ""
-        if not (_phone_matches(customer_phone, mobile_digits) or _phone_matches(shipping_phone, mobile_digits)):
-            raise NotFoundException("Order not found")
+        if customer_id is not None:
+            if int(order["customer_id"]) != customer_id:
+                raise NotFoundException("Order not found")
+        else:
+            mobile_digits = normalize_phone(mobile or "")
+            if len(mobile_digits) != 10:
+                raise ValidationException(
+                    details=[{"field": "mobile", "message": "Enter a valid 10-digit mobile number"}]
+                )
+
+            customer = customer_repository.fetch_by_id(int(order["customer_id"]))
+            customer_phone = from_db_text((customer or {}).get("phone")) or ""
+            shipping_phone = from_db_text(order.get("shipping_phone")) or ""
+            if not (
+                _phone_matches(customer_phone, mobile_digits)
+                or _phone_matches(shipping_phone, mobile_digits)
+            ):
+                raise NotFoundException("Order not found")
 
         order_id = int(order["order_id"])
-        shipment = shipment_repository.fetch_by_order_id(order_id)
-        tracking_rows = []
-        if shipment:
-            tracking_rows = shiprocket_integration_service.sync_tracking_for_order(order_id)
-        else:
-            tracking_rows = shipment_tracking_repository.list_paginated(
-                page=1, page_size=100, order_id=order_id
-            )[0]
+        live_tracking = shiprocket_integration_service.get_live_tracking_for_order(order_id)
+        shipment = live_tracking.get("shipment")
+        tracking_rows = live_tracking.get("events") or []
 
         items = order_item_repository.list_by_order(order_id)
         return {
@@ -99,8 +103,8 @@ class StorefrontOrderTrackingService:
                 }
                 for item in items
             ],
-            "shipment": self._serialize_shipment(shipment) if shipment else None,
-            "tracking": [self._serialize_tracking(row) for row in tracking_rows],
+            "shipment": shipment,
+            "tracking": tracking_rows,
         }
 
     def _serialize_order_summary(self, row: dict[str, Any]) -> dict[str, Any]:

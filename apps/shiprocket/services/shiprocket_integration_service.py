@@ -343,6 +343,153 @@ class ShiprocketIntegrationService:
             page=1, page_size=100, order_id=order_id
         )[0]
 
+    def _parse_tracking_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        tracking_data = (
+            payload.get("tracking_data")
+            if isinstance(payload.get("tracking_data"), dict)
+            else payload
+        )
+        scans = tracking_data.get("shipment_track_activities") or tracking_data.get("scans") or []
+        events: list[dict[str, Any]] = []
+
+        if isinstance(scans, list):
+            for scan in scans:
+                if not isinstance(scan, dict):
+                    continue
+                message = from_db_text(scan.get("activity") or scan.get("status")) or "Shipment update"
+                location = from_db_text(scan.get("location")) or ""
+                status_code = from_db_text(
+                    scan.get("sr-status-label") or scan.get("status") or message
+                ) or "UPDATE"
+                tracked_at = scan.get("date")
+                events.append(
+                    {
+                        "statusCode": status_code,
+                        "statusMessage": message,
+                        "location": location,
+                        "trackedAt": _format_dt(tracked_at),
+                        "source": "SHIPROCKET",
+                    }
+                )
+
+        current_status = from_db_text(
+            tracking_data.get("shipment_status")
+            or tracking_data.get("current_status")
+            or payload.get("current_status")
+            or payload.get("shipment_status")
+        )
+        awb = from_db_text(tracking_data.get("awb") or payload.get("awb")) or ""
+        courier = from_db_text(
+            tracking_data.get("courier_name") or payload.get("courier_name") or payload.get("courier")
+        ) or ""
+        edd = from_db_text(tracking_data.get("edd") or payload.get("edd")) or ""
+
+        if not events and current_status:
+            events.append(
+                {
+                    "statusCode": current_status,
+                    "statusMessage": current_status,
+                    "location": from_db_text(payload.get("location")) or "",
+                    "trackedAt": _format_dt(datetime.now()),
+                    "source": "SHIPROCKET",
+                }
+            )
+
+        return {
+            "currentStatus": current_status,
+            "awb": awb if awb.upper() != "NA" else "",
+            "courier": courier if courier.upper() != "NA" else "",
+            "edd": edd if edd.upper() != "NA" else "",
+            "events": events,
+        }
+
+    def _events_from_db(self, order_id: int) -> list[dict[str, Any]]:
+        rows = shipment_tracking_repository.list_paginated(
+            page=1, page_size=100, order_id=order_id
+        )[0]
+        return [
+            {
+                "statusCode": from_db_text(row.get("status_code")) or "",
+                "statusMessage": from_db_text(row.get("status_message")) or "",
+                "location": from_db_text(row.get("location")) or "",
+                "trackedAt": _format_dt(row.get("tracked_at")),
+                "source": from_db_text(row.get("source")) or "SHIPROCKET",
+            }
+            for row in rows
+        ]
+
+    def _shipment_snapshot(self, shipment: dict[str, Any], *, extra: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+        awb = from_db_text(shipment.get("awb_number")) or ""
+        info = {
+            "shiprocketOrderId": from_db_text(shipment.get("shiprocket_order_id")),
+            "awbNumber": awb if awb.upper() != "NA" else "",
+            "courierName": from_db_text(shipment.get("courier_name")) or "",
+            "deliveryStatus": from_db_text(shipment.get("delivery_status")) or "",
+            "trackingNumber": from_db_text(shipment.get("tracking_number")) or "",
+            "estimatedDeliveryDate": _format_dt(shipment.get("estimated_delivery_date")),
+        }
+        if extra:
+            for key, value in extra.items():
+                if value not in (None, "", "NA"):
+                    info[key] = value
+        return info
+
+    def get_live_tracking_for_order(self, order_id: int) -> dict[str, Any]:
+        shipment = shipment_repository.fetch_by_order_id(order_id)
+        if not shipment:
+            return {"shipment": None, "events": []}
+
+        shipment_id = int(shipment["shipment_id"])
+        awb = from_db_text(shipment.get("awb_number")) or ""
+        external_id = from_db_text(shipment.get("shipment_id_external")) or ""
+
+        if not self.enabled:
+            return {
+                "shipment": self._shipment_snapshot(shipment),
+                "events": self._events_from_db(order_id),
+            }
+
+        try:
+            if awb and awb.upper() != "NA":
+                payload = self.client.track_awb(awb)
+            elif external_id and external_id.upper() != "NA":
+                payload = self.client.track_shipment(external_id)
+            else:
+                return {
+                    "shipment": self._shipment_snapshot(shipment),
+                    "events": self._events_from_db(order_id),
+                }
+        except ShiprocketError:
+            logger.exception("Shiprocket live tracking failed for order %s", order_id)
+            return {
+                "shipment": self._shipment_snapshot(shipment),
+                "events": self._events_from_db(order_id),
+            }
+
+        self._record_tracking_snapshot(shipment_id, order_id, payload)
+        parsed = self._parse_tracking_payload(payload)
+        if parsed.get("currentStatus"):
+            shipment_repository.update(
+                shipment_id,
+                {
+                    "delivery_status": to_db_text(parsed["currentStatus"]),
+                    "raw_response": Json(payload),
+                },
+            )
+
+        return {
+            "shipment": self._shipment_snapshot(
+                shipment,
+                extra={
+                    "deliveryStatus": parsed.get("currentStatus"),
+                    "courierName": parsed.get("courier"),
+                    "awbNumber": parsed.get("awb"),
+                    "estimatedDeliveryDate": parsed.get("edd"),
+                },
+            ),
+            "events": parsed.get("events") or [],
+        }
+
     def _record_tracking_snapshot(
         self,
         shipment_id: int,
@@ -396,6 +543,14 @@ class ShiprocketIntegrationService:
                     "raw_payload": Json(payload),
                 }
             )
+
+
+def _format_dt(value: Any) -> Optional[str]:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
 
 
 shiprocket_integration_service = ShiprocketIntegrationService()

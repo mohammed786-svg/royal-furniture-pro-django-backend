@@ -6,6 +6,8 @@ import uuid
 
 from django.http import HttpRequest
 
+from core.helpers.text import from_db_text
+
 GUEST_SESSION_HEADER = "HTTP_X_GUEST_SESSION"
 GUEST_SESSION_COOKIE = "royal_guest_session"
 
@@ -55,4 +57,23 @@ def require_customer_id(request: HttpRequest) -> int:
     customer_id = resolve_customer_id(request)
     if not customer_id:
         raise AuthenticationException("Please sign in to continue")
+    return customer_id
+
+
+def require_customer_mobile(request: HttpRequest) -> int:
+    from apps.customers.repositories.customer_repository import customer_repository
+    from core.exceptions.base import ValidationException
+
+    customer_id = require_customer_id(request)
+    customer = customer_repository.fetch_by_id(customer_id)
+    phone = from_db_text(customer.get("phone")) if customer else ""
+    if len(normalize_phone(phone)) != 10:
+        raise ValidationException(
+            details=[
+                {
+                    "field": "mobile",
+                    "message": "Add your mobile number in profile to continue shopping",
+                }
+            ]
+        )
     return customer_id

@@ -148,9 +148,9 @@ class CartService:
             return self._serialize_cart(cart, items, conn=conn)
 
     def add_item(self, request: HttpRequest, payload: dict[str, Any]) -> dict[str, Any]:
-        from apps.storefront.helpers.commerce_context import require_customer_id
+        from apps.storefront.helpers.commerce_context import require_customer_mobile
 
-        customer_id = require_customer_id(request)
+        customer_id = require_customer_mobile(request)
         product_id = _optional_int(payload.get("productId"))
         if not product_id:
             raise ValidationException(

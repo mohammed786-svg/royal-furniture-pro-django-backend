@@ -98,6 +98,17 @@ class StorefrontGoogleAuthView(APIView):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
+class StorefrontRefreshView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request: Request):
+        refresh_token = request.data.get("refreshToken", "")
+        data = customer_auth_service.refresh(refresh_token)
+        return APIResponse.success(data=data, message="Token refreshed", endpoint=request.path)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
 class StorefrontMeView(APIView):
     authentication_classes = []
     permission_classes = []
@@ -142,10 +153,13 @@ class StorefrontTrackOrderView(APIView):
     permission_classes = []
 
     def get(self, request: Request):
+        from apps.storefront.helpers.commerce_context import resolve_customer_id
+
         try:
             data = storefront_order_tracking_service.track_order(
                 order_number=request.query_params.get("orderNumber", ""),
                 mobile=request.query_params.get("mobile", ""),
+                customer_id=resolve_customer_id(request),
             )
             return APIResponse.success(data=data, endpoint=request.path)
         except NotFoundException as exc:

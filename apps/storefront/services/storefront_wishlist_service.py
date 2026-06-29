@@ -6,7 +6,7 @@ from django.http import HttpRequest
 
 from apps.customers.repositories.wishlist_repository import wishlist_repository
 from apps.products.repositories.product_repository import product_repository
-from apps.storefront.helpers.commerce_context import require_customer_id
+from apps.storefront.helpers.commerce_context import require_customer_id, require_customer_mobile
 from core.database.transaction import atomic
 from core.exceptions.base import NotFoundException, ValidationException
 from core.helpers.text import from_db_text
@@ -45,7 +45,7 @@ class StorefrontWishlistService:
         return {"items": items, "itemCount": len(items)}
 
     def add_item(self, request: HttpRequest, payload: dict[str, Any]) -> dict[str, Any]:
-        customer_id = require_customer_id(request)
+        customer_id = require_customer_mobile(request)
         product_id = _optional_int(payload.get("productId"))
         if not product_id:
             raise ValidationException(
