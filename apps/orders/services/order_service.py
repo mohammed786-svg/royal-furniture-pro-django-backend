@@ -13,6 +13,7 @@ from apps.orders.repositories.order_repository import order_repository
 from apps.orders.repositories.order_status_repository import order_status_repository
 from apps.orders.repositories.order_tracking_repository import order_tracking_repository
 from apps.payments.repositories.payment_repository import payment_repository
+from apps.products.repositories.product_child_repository import product_child_repository
 from apps.products.repositories.product_repository import product_repository
 from core.database import select_one
 from core.database.transaction import atomic
@@ -237,6 +238,8 @@ class OrderService:
             )
 
         variant_id = _optional_int(item.get("productVariantId"))
+        if variant_id is None:
+            variant_id = product_child_repository.fetch_default_variant_id(product_id)
         variant_name = ""
         sku = from_db_text(product.get("sku")) or ""
         unit_price = float(item.get("unitPrice") or product.get("sale_price") or product.get("base_price") or 0)

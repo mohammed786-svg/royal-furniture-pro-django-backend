@@ -27,6 +27,12 @@ class ProductChildRepository:
         """
         return select_query(sql, [product_id])
 
+    def fetch_default_variant_id(self, product_id: int) -> Optional[int]:
+        variants = self.list_variants(product_id)
+        if not variants:
+            return None
+        return int(variants[0]["product_variant_id"])
+
     def list_specifications(self, product_id: int) -> list[dict[str, Any]]:
         sql = f"""
             SELECT * FROM {self.schema}.product_specificationtbl

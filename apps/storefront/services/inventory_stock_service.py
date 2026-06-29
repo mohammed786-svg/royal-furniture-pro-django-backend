@@ -8,6 +8,7 @@ from apps.inventory.repositories.inventory_log_repository import inventory_log_r
 from apps.inventory.repositories.inventory_repository import inventory_repository
 from apps.orders.repositories.order_item_repository import order_item_repository
 from core.database import select_query
+from core.database import select_one
 from core.exceptions.base import ValidationException
 
 
@@ -24,9 +25,7 @@ class InventoryStockService:
     ) -> Optional[dict[str, Any]]:
         params: list[Any] = [product_id]
         where = "product_id = %s AND is_deleted = FALSE AND is_active = TRUE"
-        if product_variant_id is None:
-            where += " AND product_variant_id IS NULL"
-        else:
+        if product_variant_id is not None:
             where += " AND product_variant_id = %s"
             params.append(product_variant_id)
         if warehouse_id:
@@ -41,9 +40,33 @@ class InventoryStockService:
             LIMIT 1
             FOR UPDATE
         """
-        from core.database import select_one
+        row = select_one(sql, params, conn=conn)
+        return row
 
-        return select_one(sql, params, conn=conn)
+    def get_available_stock(
+        self,
+        *,
+        product_id: int,
+        product_variant_id: Optional[int] = None,
+        warehouse_id: Optional[int] = None,
+        conn: Optional[PgConnection] = None,
+    ) -> int:
+        params: list[Any] = [product_id]
+        where = "product_id = %s AND is_deleted = FALSE AND is_active = TRUE"
+        if product_variant_id is not None:
+            where += " AND product_variant_id = %s"
+            params.append(product_variant_id)
+        if warehouse_id:
+            where += " AND warehouse_id = %s"
+            params.append(warehouse_id)
+
+        sql = f"""
+            SELECT COALESCE(SUM(available_stock), 0) AS stock
+            FROM {self.schema}.inventorytbl
+            WHERE {where}
+        """
+        row = select_one(sql, params, conn=conn)
+        return int(row["stock"]) if row else 0
 
     def _apply_stock_change(
         self,
@@ -132,7 +155,15 @@ class InventoryStockService:
         )
         if not row:
             raise ValidationException(
-                details=[{"field": "productId", "message": f"No inventory configured for product {product_id}"}]
+                details=[
+                    {
+                        "field": "productId",
+                        "message": (
+                            f"No active inventory for product {product_id}"
+                            + (f" variant {product_variant_id}" if product_variant_id else "")
+                        ),
+                    }
+                ]
             )
         if int(row.get("available_stock") or 0) < quantity:
             raise ValidationException(

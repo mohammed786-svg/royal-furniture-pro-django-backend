@@ -4,9 +4,11 @@ from typing import Any, Optional
 
 from django.http import HttpRequest
 
+from apps.products.repositories.product_child_repository import product_child_repository
 from apps.products.repositories.product_repository import product_repository
 from apps.storefront.helpers.commerce_context import resolve_customer_id, resolve_guest_session
 from apps.storefront.repositories.cart_repository import cart_repository
+from apps.storefront.services.inventory_stock_service import inventory_stock_service
 from core.database.transaction import atomic
 from core.exceptions.base import NotFoundException, ValidationException
 from core.helpers.text import from_db_text
@@ -22,10 +24,33 @@ def _optional_int(value: Any) -> Optional[int]:
 
 
 class CartService:
-    def _serialize_item(self, row: dict[str, Any]) -> dict[str, Any]:
+    def _resolve_variant_id(self, product_id: int, variant_id: Optional[int]) -> Optional[int]:
+        if variant_id is not None:
+            return variant_id
+        return product_child_repository.fetch_default_variant_id(product_id)
+
+    def _available_stock(
+        self,
+        product_id: int,
+        variant_id: Optional[int],
+        *,
+        conn,
+    ) -> int:
+        resolved = self._resolve_variant_id(product_id, variant_id)
+        return inventory_stock_service.get_available_stock(
+            product_id=product_id,
+            product_variant_id=resolved,
+            conn=conn,
+        )
+
+    def _serialize_item(self, row: dict[str, Any], *, conn=None) -> dict[str, Any]:
         slug = from_db_text(row.get("product_slug")) or ""
         sale = float(row.get("unit_price") or row.get("product_sale_price") or 0)
         mrp = float(row.get("product_mrp") or sale)
+        product_id = int(row["product_id"])
+        variant_raw = row.get("product_variant_id")
+        variant_id = int(variant_raw) if variant_raw else None
+        available_stock = self._available_stock(product_id, variant_id, conn=conn)
         return {
             "id": str(row["cart_item_id"]),
             "productId": str(row["product_id"]),
@@ -40,10 +65,18 @@ class CartService:
             "productVariantId": (
                 str(row["product_variant_id"]) if row.get("product_variant_id") else None
             ),
+            "availableStock": available_stock,
+            "maxQuantity": available_stock,
         }
 
-    def _serialize_cart(self, cart: dict[str, Any], items: list[dict[str, Any]]) -> dict[str, Any]:
-        serialized_items = [self._serialize_item(row) for row in items]
+    def _serialize_cart(
+        self,
+        cart: dict[str, Any],
+        items: list[dict[str, Any]],
+        *,
+        conn=None,
+    ) -> dict[str, Any]:
+        serialized_items = [self._serialize_item(row, conn=conn) for row in items]
         return {
             "cartId": str(cart["cart_id"]),
             "items": serialized_items,
@@ -112,7 +145,7 @@ class CartService:
                 conn=conn,
             )
             items = cart_repository.list_items(int(cart["cart_id"]), conn=conn)
-            return self._serialize_cart(cart, items)
+            return self._serialize_cart(cart, items, conn=conn)
 
     def add_item(self, request: HttpRequest, payload: dict[str, Any]) -> dict[str, Any]:
         from apps.storefront.helpers.commerce_context import require_customer_id
@@ -130,6 +163,17 @@ class CartService:
         quantity = max(1, int(payload.get("quantity") or 1))
         variant_id = _optional_int(payload.get("productVariantId"))
         unit_price = float(product.get("sale_price") or product.get("base_price") or 0)
+
+        variant_id = self._resolve_variant_id(product_id, variant_id)
+        if variant_id:
+            variants = product_child_repository.list_variants(product_id)
+            variant = next(
+                (v for v in variants if int(v["product_variant_id"]) == variant_id),
+                None,
+            )
+            if variant:
+                unit_price = float(variant.get("sale_price") or variant.get("price") or unit_price)
+
         line_total = unit_price * quantity
 
         session_id = resolve_guest_session(request) or "guest"
@@ -144,8 +188,25 @@ class CartService:
             existing = cart_repository.fetch_item_by_product(
                 cart_id, product_id, variant_id, conn=conn
             )
+            available = self._available_stock(product_id, variant_id, conn=conn)
+            if available <= 0:
+                raise ValidationException(
+                    details=[{"field": "quantity", "message": "This product is out of stock"}]
+                )
+            existing_qty = int(existing["quantity"]) if existing else 0
+            new_qty = existing_qty + quantity
+            if new_qty > available:
+                if existing_qty > 0:
+                    message = (
+                        f"Only {available} unit(s) available. "
+                        f"You already have {existing_qty} in your cart."
+                    )
+                else:
+                    message = f"Only {available} unit(s) available"
+                raise ValidationException(
+                    details=[{"field": "quantity", "message": message}]
+                )
             if existing:
-                new_qty = int(existing["quantity"]) + quantity
                 cart_repository.update_item(
                     int(existing["cart_item_id"]),
                     {"quantity": new_qty, "line_total": unit_price * new_qty},
@@ -170,7 +231,7 @@ class CartService:
                 session_id=session_id if not customer_id else None,
                 conn=conn,
             ) or cart
-            return self._serialize_cart(cart, items)
+            return self._serialize_cart(cart, items, conn=conn)
 
     def update_item(
         self,
@@ -194,6 +255,24 @@ class CartService:
             if not cart or int(cart["cart_id"]) != int(item["cart_id"]):
                 raise NotFoundException("Cart item not found")
 
+            product_id = int(item["product_id"])
+            variant_raw = item.get("product_variant_id")
+            variant_id = int(variant_raw) if variant_raw else None
+            available = self._available_stock(product_id, variant_id, conn=conn)
+            if available <= 0:
+                raise ValidationException(
+                    details=[{"field": "quantity", "message": "This product is out of stock"}]
+                )
+            if quantity > available:
+                raise ValidationException(
+                    details=[
+                        {
+                            "field": "quantity",
+                            "message": f"Only {available} unit(s) available",
+                        }
+                    ]
+                )
+
             unit_price = float(item.get("unit_price") or 0)
             cart_repository.update_item(
                 cart_item_id,
@@ -202,7 +281,7 @@ class CartService:
             )
             self._recalculate(int(cart["cart_id"]), conn=conn)
             items = cart_repository.list_items(int(cart["cart_id"]), conn=conn)
-            return self._serialize_cart(cart, items)
+            return self._serialize_cart(cart, items, conn=conn)
 
     def remove_item(self, request: HttpRequest, cart_item_id: int) -> dict[str, Any]:
         customer_id = resolve_customer_id(request)
@@ -223,7 +302,7 @@ class CartService:
             cart_repository.soft_delete_item(cart_item_id, conn=conn)
             self._recalculate(int(cart["cart_id"]), conn=conn)
             items = cart_repository.list_items(int(cart["cart_id"]), conn=conn)
-            return self._serialize_cart(cart, items)
+            return self._serialize_cart(cart, items, conn=conn)
 
     def clear_cart(self, request: HttpRequest) -> dict[str, Any]:
         customer_id = resolve_customer_id(request)
@@ -239,7 +318,7 @@ class CartService:
                 cart_repository.clear_items(int(cart["cart_id"]), conn=conn)
                 self._recalculate(int(cart["cart_id"]), conn=conn)
                 items = []
-                return self._serialize_cart(cart, items)
+                return self._serialize_cart(cart, items, conn=conn)
         return self.get_cart(request)
 
     def merge_guest_cart(self, customer_id: int, session_id: str) -> None:
