@@ -8,24 +8,47 @@ from core.database import select_one, select_query
 class SalesRepository:
     schema = "royal"
 
+    _STATUS_JOIN = """
+        LEFT JOIN {schema}.order_statustbl os ON os.order_status_id = o.order_status_id
+    """
+
+    # Revenue counts only fulfilled / committed sales — not cancelled, returned, or refunded.
+    _REVENUE_STATUS_SQL = """
+        LOWER(COALESCE(os.status_name, o.current_status, ''))
+            IN ('confirmed', 'delivered')
+    """
+
     def _period_days(self, period: str) -> int:
         return {"7d": 7, "30d": 30, "90d": 90}.get(period, 30)
+
+    def _status_join(self) -> str:
+        return self._STATUS_JOIN.format(schema=self.schema)
 
     def summary_stats(self, *, period: str = "30d") -> dict[str, Any]:
         days = self._period_days(period)
         sql = f"""
             SELECT
                 COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '{days} days'
+                    AND {self._REVENUE_STATUS_SQL}
                     THEN o.total_amount ELSE 0 END), 0) AS current_revenue,
+                COUNT(CASE WHEN o.created_at >= NOW() - INTERVAL '{days} days'
+                    AND {self._REVENUE_STATUS_SQL}
+                    THEN 1 END) AS current_revenue_orders,
                 COUNT(CASE WHEN o.created_at >= NOW() - INTERVAL '{days} days'
                     THEN 1 END) AS current_orders,
                 COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '{days * 2} days'
                     AND o.created_at < NOW() - INTERVAL '{days} days'
+                    AND {self._REVENUE_STATUS_SQL}
                     THEN o.total_amount ELSE 0 END), 0) AS previous_revenue,
+                COUNT(CASE WHEN o.created_at >= NOW() - INTERVAL '{days * 2} days'
+                    AND o.created_at < NOW() - INTERVAL '{days} days'
+                    AND {self._REVENUE_STATUS_SQL}
+                    THEN 1 END) AS previous_revenue_orders,
                 COUNT(CASE WHEN o.created_at >= NOW() - INTERVAL '{days * 2} days'
                     AND o.created_at < NOW() - INTERVAL '{days} days'
                     THEN 1 END) AS previous_orders
             FROM {self.schema}.ordertbl o
+            {self._status_join()}
             WHERE o.is_deleted = FALSE
         """
         row = select_one(sql) or {}
@@ -48,8 +71,10 @@ class SalesRepository:
                 {group_expr} AS label,
                 COALESCE(SUM(o.total_amount), 0) AS value
             FROM {self.schema}.ordertbl o
+            {self._status_join()}
             WHERE o.is_deleted = FALSE
               AND o.created_at >= NOW() - INTERVAL '{days} days'
+              AND {self._REVENUE_STATUS_SQL}
             GROUP BY {order_expr}, {group_expr}
             ORDER BY {order_expr}
         """
@@ -82,9 +107,11 @@ class SalesRepository:
             FROM {self.schema}.order_itemtbl oi
             INNER JOIN {self.schema}.ordertbl o ON o.order_id = oi.order_id
             LEFT JOIN {self.schema}.producttbl p ON p.product_id = oi.product_id
+            {self._status_join()}
             WHERE oi.is_deleted = FALSE
               AND o.is_deleted = FALSE
               AND o.created_at >= NOW() - INTERVAL '{days} days'
+              AND {self._REVENUE_STATUS_SQL}
             GROUP BY oi.product_id, oi.product_name, oi.sku, p.name, p.sku
             ORDER BY revenue DESC
             LIMIT %s

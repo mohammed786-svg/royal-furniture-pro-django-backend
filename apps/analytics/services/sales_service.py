@@ -53,9 +53,12 @@ class SalesService:
         stats = sales_repository.summary_stats(period=period)
         current_revenue = float(stats.get("current_revenue") or 0)
         current_orders = int(stats.get("current_orders") or 0)
+        current_revenue_orders = int(stats.get("current_revenue_orders") or 0)
         previous_revenue = float(stats.get("previous_revenue") or 0)
         previous_orders = int(stats.get("previous_orders") or 0)
-        avg_order_value = round(current_revenue / current_orders, 2) if current_orders else 0.0
+        avg_order_value = (
+            round(current_revenue / current_revenue_orders, 2) if current_revenue_orders else 0.0
+        )
 
         catalog = sales_repository.catalog_counts()
         order_counts = sales_repository.all_time_order_counts()
@@ -98,6 +101,7 @@ class SalesService:
             "summary": {
                 "totalRevenue": round(current_revenue, 2),
                 "totalOrders": current_orders,
+                "revenueOrders": current_revenue_orders,
                 "avgOrderValue": avg_order_value,
                 "revenueChangePercent": _change_percent(current_revenue, previous_revenue),
                 "ordersChangePercent": _change_percent(float(current_orders), float(previous_orders)),
