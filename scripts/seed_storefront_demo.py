@@ -440,14 +440,14 @@ def seed_warehouse() -> int:
         RETURNING warehouse_id
         """,
         [
-            "RFP-BLR-01",
-            "Royal Furniture Pro — Bengaluru Hub",
-            "Plot 12, Furniture Park, Hosur Road",
-            "Bengaluru",
+            "RFP-BLG-01",
+            "Royal Furniture Pro — Belagavi Store",
+            "1st Cross, Azam Nagar",
+            "Belagavi",
             "Karnataka",
-            "560100",
-            "+91 80 4000 1234",
-            "warehouse@royalfurniturepro.com",
+            "590010",
+            "080730 93766",
+            "customercare@royalfurniturepro.com",
         ],
     )
     return int(row["warehouse_id"])

@@ -9,15 +9,9 @@ from core.exceptions.base import NotFoundException
 from core.helpers.text import from_db_text
 
 
-COMPANY_INFO = {
-    "name": "ROYAL FURNITURE PRO INCORPORATION PRIVATE LIMITED",
-    "address": (
-        "4th Floor, No 5, Raj square, Vijaya Bank Colony Main Road, "
-        "Banaswadi Ring Road, Bengaluru Urban, Karnataka — 560043"
-    ),
-    "phone": "+91-7676367636",
-    "email": "customercare@royalfurniturepro.com",
-}
+from core.constants.company import COMPANY_INFO, COMPANY_STATE
+
+DEFAULT_GST_PERCENT = 18.0
 
 
 def _format_dt(value: Any) -> Optional[str]:
@@ -40,6 +34,63 @@ def _format_address(prefix: str, row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _normalize_state(value: str) -> str:
+    return " ".join((value or "").strip().lower().split())
+
+
+def _is_intra_state(customer_state: str) -> bool:
+    customer = _normalize_state(customer_state)
+    if not customer:
+        return True
+    company = _normalize_state(COMPANY_STATE)
+    return customer == company or customer in company or company in customer
+
+
+def _infer_gst_percent(taxable_amount: float, tax_amount: float) -> float:
+    if taxable_amount <= 0 or tax_amount <= 0:
+        return DEFAULT_GST_PERCENT
+    inferred = round((tax_amount / taxable_amount) * 100, 2)
+    return inferred if inferred > 0 else DEFAULT_GST_PERCENT
+
+
+def _build_gst_breakdown(
+    *,
+    customer_state: str,
+    taxable_amount: float,
+    tax_amount: float,
+) -> dict[str, Any]:
+    gst_percent = _infer_gst_percent(taxable_amount, tax_amount)
+    tax_amount = round(tax_amount, 2)
+
+    if _is_intra_state(customer_state):
+        half_rate = round(gst_percent / 2, 2)
+        cgst_amount = round(tax_amount / 2, 2)
+        sgst_amount = round(tax_amount - cgst_amount, 2)
+        return {
+            "mode": "intra",
+            "gstPercent": gst_percent,
+            "taxableAmount": round(taxable_amount, 2),
+            "cgstPercent": half_rate,
+            "cgstAmount": cgst_amount,
+            "sgstPercent": half_rate,
+            "sgstAmount": sgst_amount,
+            "igstPercent": 0.0,
+            "igstAmount": 0.0,
+        }
+
+    return {
+        "mode": "inter",
+        "gstPercent": gst_percent,
+        "taxableAmount": round(taxable_amount, 2),
+        "cgstPercent": 0.0,
+        "cgstAmount": 0.0,
+        "sgstPercent": 0.0,
+        "sgstAmount": 0.0,
+        "igstPercent": gst_percent,
+        "igstAmount": tax_amount,
+    }
+
+
 class InvoiceService:
     def build_invoice(self, order_id: int) -> dict[str, Any]:
         order = order_repository.fetch_by_id(order_id)
@@ -58,8 +109,9 @@ class InvoiceService:
             discount = float(item.get("discount_amount") or 0)
             tax = float(item.get("tax_amount") or 0)
             line_total = float(item.get("line_total") or 0)
-            gst_percent = float(item.get("product_gst_percent") or 0)
+            gst_percent = float(item.get("product_gst_percent") or DEFAULT_GST_PERCENT)
             hsn = from_db_text(item.get("hsn_code")) or ""
+            taxable_value = round(max(line_total - tax, 0), 2)
 
             subtotal += unit_price * qty
             total_tax += tax
@@ -74,6 +126,7 @@ class InvoiceService:
                 "unitPrice": unit_price,
                 "discountAmount": discount,
                 "taxAmount": tax,
+                "taxableValue": taxable_value,
                 "lineTotal": line_total,
                 "hsnCode": hsn,
                 "gstPercent": gst_percent,
@@ -81,6 +134,19 @@ class InvoiceService:
 
         shipping = float(order.get("shipping_amount") or 0)
         grand_total = float(order.get("total_amount") or 0)
+        discount_total = round(float(order.get("discount_amount") or total_discount), 2)
+        tax_total = round(float(order.get("tax_amount") or total_tax), 2)
+        taxable_amount = round(max(subtotal - discount_total, 0), 2)
+
+        billing = _format_address("billing", order)
+        shipping_address = _format_address("shipping", order)
+        customer_state = billing.get("state") or shipping_address.get("state") or ""
+
+        gst_breakdown = _build_gst_breakdown(
+            customer_state=customer_state,
+            taxable_amount=taxable_amount,
+            tax_amount=tax_total,
+        )
 
         return {
             "invoiceNumber": from_db_text(order.get("order_number")) or "",
@@ -94,15 +160,17 @@ class InvoiceService:
                 "email": from_db_text(order.get("customer_email")) or "",
                 "phone": from_db_text(order.get("customer_phone")) or "",
             },
-            "shippingAddress": _format_address("shipping", order),
-            "billingAddress": _format_address("billing", order),
+            "shippingAddress": shipping_address,
+            "billingAddress": billing,
             "lineItems": line_items,
             "totals": {
                 "subtotal": round(subtotal, 2),
-                "discountAmount": round(float(order.get("discount_amount") or total_discount), 2),
-                "taxAmount": round(float(order.get("tax_amount") or total_tax), 2),
+                "discountAmount": discount_total,
+                "taxableAmount": taxable_amount,
+                "taxAmount": tax_total,
                 "shippingAmount": round(shipping, 2),
                 "grandTotal": round(grand_total, 2),
+                "gstBreakdown": gst_breakdown,
             },
             "paymentMethod": from_db_text(order.get("payment_method")) or "",
             "currentStatus": from_db_text(order.get("current_status")) or "",

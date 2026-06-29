@@ -17,7 +17,7 @@ from apps.shiprocket.repositories.shipment_repository import shipment_repository
 from apps.shiprocket.repositories.shipment_tracking_repository import (
     shipment_tracking_repository,
 )
-from apps.storefront.helpers.commerce_context import normalize_phone
+from core.constants.company import SHIPROCKET_WAREHOUSE_DEFAULTS
 from core.helpers.text import from_db_text, to_db_text
 from core.integrations.shiprocket.client import ShiprocketClient, ShiprocketError, shiprocket_client
 
@@ -252,16 +252,17 @@ class ShiprocketIntegrationService:
         return shipment_repository.fetch_by_id(int(shipment["shipment_id"])) or shipment
 
     def _warehouse_return_address(self) -> dict[str, str]:
+        defaults = SHIPROCKET_WAREHOUSE_DEFAULTS
         return {
-            "name": getattr(settings, "SHIPROCKET_WAREHOUSE_NAME", "Royal Furniture Pro"),
-            "address": getattr(settings, "SHIPROCKET_WAREHOUSE_ADDRESS", "Warehouse"),
-            "address_2": getattr(settings, "SHIPROCKET_WAREHOUSE_ADDRESS_2", ""),
-            "city": getattr(settings, "SHIPROCKET_WAREHOUSE_CITY", "Mumbai"),
-            "state": getattr(settings, "SHIPROCKET_WAREHOUSE_STATE", "Maharashtra"),
-            "pincode": getattr(settings, "SHIPROCKET_WAREHOUSE_PINCODE", "400001"),
-            "country": getattr(settings, "SHIPROCKET_WAREHOUSE_COUNTRY", "India"),
-            "email": getattr(settings, "SHIPROCKET_WAREHOUSE_EMAIL", "support@royalfurniture.local"),
-            "phone": getattr(settings, "SHIPROCKET_WAREHOUSE_PHONE", "9999999999"),
+            "name": getattr(settings, "SHIPROCKET_WAREHOUSE_NAME", defaults["name"]),
+            "address": getattr(settings, "SHIPROCKET_WAREHOUSE_ADDRESS", defaults["address"]),
+            "address_2": getattr(settings, "SHIPROCKET_WAREHOUSE_ADDRESS_2", defaults["address_2"]),
+            "city": getattr(settings, "SHIPROCKET_WAREHOUSE_CITY", defaults["city"]),
+            "state": getattr(settings, "SHIPROCKET_WAREHOUSE_STATE", defaults["state"]),
+            "pincode": getattr(settings, "SHIPROCKET_WAREHOUSE_PINCODE", defaults["pincode"]),
+            "country": getattr(settings, "SHIPROCKET_WAREHOUSE_COUNTRY", defaults["country"]),
+            "email": getattr(settings, "SHIPROCKET_WAREHOUSE_EMAIL", defaults["email"]),
+            "phone": getattr(settings, "SHIPROCKET_WAREHOUSE_PHONE", defaults["phone"]),
         }
 
     def create_return_for_order(
