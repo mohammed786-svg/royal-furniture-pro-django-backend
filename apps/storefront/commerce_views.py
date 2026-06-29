@@ -170,6 +170,22 @@ class StorefrontTrackOrderView(APIView):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
+class StorefrontOrderInvoiceView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request: Request):
+        from apps.storefront.helpers.commerce_context import require_customer_id
+
+        customer_id = require_customer_id(request)
+        invoice = storefront_order_tracking_service.get_invoice(
+            order_number=request.query_params.get("orderNumber", ""),
+            customer_id=customer_id,
+        )
+        return APIResponse.success(data={"invoice": invoice}, endpoint=request.path)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
 class StorefrontOrderActionsView(APIView):
     authentication_classes = []
     permission_classes = []

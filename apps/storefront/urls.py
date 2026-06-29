@@ -10,6 +10,7 @@ from apps.storefront.commerce_views import (
     StorefrontGoogleAuthView,
     StorefrontMeView,
     StorefrontOrderCancelView,
+    StorefrontOrderInvoiceView,
     StorefrontOrderReturnExchangeView,
     StorefrontOrdersView,
     StorefrontOrderActionsView,
@@ -77,4 +78,5 @@ urlpatterns = [
         name="storefront-order-return-exchange",
     ),
     path("orders/track/", StorefrontTrackOrderView.as_view(), name="storefront-track-order"),
+    path("orders/invoice/", StorefrontOrderInvoiceView.as_view(), name="storefront-order-invoice"),
 ]

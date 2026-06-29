@@ -6,7 +6,9 @@ from typing import Any, Optional
 from apps.customers.repositories.customer_repository import customer_repository
 from apps.orders.repositories.order_item_repository import order_item_repository
 from apps.orders.repositories.order_repository import order_repository
+from apps.orders.services.invoice_service import invoice_service
 from apps.orders.services.order_lifecycle_service import order_lifecycle_service
+from apps.payments.repositories.payment_repository import payment_repository
 from apps.shiprocket.services.shiprocket_integration_service import shiprocket_integration_service
 from apps.storefront.helpers.commerce_context import normalize_phone
 from core.exceptions.base import NotFoundException, ValidationException
@@ -29,7 +31,66 @@ def _phone_matches(order_phone: str, input_phone: str) -> bool:
     return a == b
 
 
+_PAID_PAYMENT_STATUSES = {"PAID", "VERIFIED"}
+_PAID_ORDER_STATUSES = {
+    "PAYMENT_VERIFIED",
+    "CONFIRMED",
+    "PROCESSING",
+    "PACKED",
+    "SHIPPED",
+    "DELIVERED",
+}
+_INVOICE_BLOCKED_STATUSES = {"CANCELLED", "RETURNED", "REFUNDED"}
+
+
 class StorefrontOrderTrackingService:
+    def _order_status_code(self, order: dict[str, Any]) -> str:
+        code = (
+            from_db_text(order.get("status_code"))
+            or from_db_text(order.get("current_status"))
+            or ""
+        ).strip().upper()
+        if code:
+            return code
+        name = (from_db_text(order.get("status_name")) or "").strip().upper()
+        return name.replace(" ", "_")
+
+    def _invoice_available(self, order: dict[str, Any]) -> bool:
+        status_code = self._order_status_code(order)
+        if status_code in _INVOICE_BLOCKED_STATUSES:
+            return False
+        if status_code == "DELIVERED":
+            return True
+
+        order_id = int(order["order_id"])
+        for payment in payment_repository.list_by_order(order_id):
+            payment_status = (from_db_text(payment.get("payment_status")) or "").upper()
+            if payment_status in _PAID_PAYMENT_STATUSES:
+                return True
+
+        return status_code in _PAID_ORDER_STATUSES
+
+    def get_invoice(self, *, order_number: str, customer_id: int) -> dict[str, Any]:
+        order_number = (order_number or "").strip().upper()
+        if not order_number:
+            raise ValidationException(
+                details=[{"field": "orderNumber", "message": "Order ID is required"}]
+            )
+
+        order = order_repository.fetch_by_order_number(order_number)
+        if not order or int(order["customer_id"]) != customer_id:
+            raise NotFoundException("Order not found")
+
+        if not self._invoice_available(order):
+            raise ValidationException(
+                details=[{
+                    "field": "order",
+                    "message": "Invoice is available after payment is verified or once the order is delivered",
+                }]
+            )
+
+        return invoice_service.build_invoice(int(order["order_id"]))
+
     def list_customer_orders(self, customer_id: int, *, page: int = 1, page_size: int = 20) -> dict[str, Any]:
         rows, total = order_repository.list_paginated(
             page=page,
@@ -97,6 +158,7 @@ class StorefrontOrderTrackingService:
 
         return {
             "order": self._serialize_order_summary(order),
+            "invoiceAvailable": self._invoice_available(order),
             "items": [
                 {
                     "id": str(item["order_item_id"]),
