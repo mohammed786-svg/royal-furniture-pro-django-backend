@@ -159,6 +159,9 @@ class StockService:
             "reorder_level": reorder_level,
             "is_active": bool(payload.get("isActive", True)),
         })
+        from core.cache.product_cache import invalidate_product_cache_by_id
+
+        invalidate_product_cache_by_id(product_id)
         return self._serialize(row)
 
     def update_stock(self, inventory_id: int, payload: dict[str, Any]) -> dict[str, Any]:
@@ -190,6 +193,9 @@ class StockService:
         row = inventory_repository.update(inventory_id, updates)
         if not row:
             raise NotFoundException("Inventory record not found")
+        from core.cache.product_cache import invalidate_product_cache_by_id
+
+        invalidate_product_cache_by_id(int(existing["product_id"]))
         return self._serialize(row)
 
     def delete_stock(self, inventory_id: int) -> None:

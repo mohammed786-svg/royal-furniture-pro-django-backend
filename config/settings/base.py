@@ -48,6 +48,8 @@ STATIC_ROOT = Path(os.getenv("STATIC_ROOT", str(BASE_DIR / "staticfiles")))
 CDN_URL = os.getenv("CDN_URL", "").rstrip("/")
 
 # Integrations (placeholders)
+FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
+FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "")
 SHIPROCKET_API_KEY = os.getenv("SHIPROCKET_API_KEY", "")
 SHIPROCKET_EMAIL = os.getenv("SHIPROCKET_EMAIL", "")
 SHIPROCKET_PASSWORD = os.getenv("SHIPROCKET_PASSWORD", "")

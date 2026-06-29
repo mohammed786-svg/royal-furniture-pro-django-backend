@@ -90,6 +90,28 @@ class CustomerRepository:
         """
         return select_one(sql, [phone])
 
+    def fetch_by_email(self, email: str) -> Optional[dict[str, Any]]:
+        normalized = (email or "").strip().lower()
+        if not normalized or normalized == "na":
+            return None
+        sql = f"""
+            SELECT
+                c.*,
+                cp.customer_profile_id,
+                cp.date_of_birth,
+                cp.gender,
+                cp.profile_image,
+                cp.preferences,
+                cp.newsletter_subscribed
+            FROM {self.schema}.{self.table} c
+            LEFT JOIN {self.schema}.customer_profiletbl cp
+                ON cp.customer_id = c.customer_id AND cp.is_deleted = FALSE
+            WHERE LOWER(c.email) = %s AND c.is_deleted = FALSE AND c.is_active = TRUE
+            ORDER BY c.customer_id ASC
+            LIMIT 1
+        """
+        return select_one(sql, [normalized])
+
     def fetch_by_id(self, customer_id: int) -> Optional[dict[str, Any]]:
         sql = f"""
             SELECT

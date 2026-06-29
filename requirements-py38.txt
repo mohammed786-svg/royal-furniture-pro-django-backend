@@ -18,3 +18,4 @@ gunicorn>=21.2,<23
 whitenoise>=6.5,<7
 django-redis>=5.3,<5.5
 daphne>=4.0,<4.1
+firebase-admin>=6.5,<7

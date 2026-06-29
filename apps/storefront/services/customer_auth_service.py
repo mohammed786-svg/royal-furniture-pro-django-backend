@@ -9,6 +9,7 @@ from django.http import HttpRequest
 from apps.customers.repositories.customer_repository import customer_repository
 from apps.storefront.helpers.commerce_context import normalize_phone
 from apps.storefront.repositories.otp_repository import otp_repository
+from core.auth.firebase_verifier import verify_firebase_id_token
 from core.auth.jwt_handler import jwt_handler
 from core.database import select_one
 from core.database.transaction import atomic
@@ -154,11 +155,30 @@ class CustomerAuthService:
         )
         return self._issue_session(request, customer, otp_row)
 
+    def verify_google_sign_in(self, request: HttpRequest, id_token: str) -> dict[str, Any]:
+        try:
+            claims = verify_firebase_id_token(id_token)
+        except ValueError as exc:
+            raise AuthenticationException(str(exc)) from exc
+
+        email = (claims.get("email") or "").strip().lower()
+        if not email or not claims.get("email_verified"):
+            raise AuthenticationException("Google account email is not verified")
+
+        name = (claims.get("name") or "").strip() or email.split("@")[0]
+        customer = customer_repository.fetch_by_email(email)
+        if not customer:
+            customer = self._create_customer_for_google(email=email, full_name=name)
+
+        return self._issue_session(request, customer, None, login_type="customer_google")
+
     def _issue_session(
         self,
         request: HttpRequest,
         customer: dict[str, Any],
         otp_row: Optional[dict[str, Any]],
+        *,
+        login_type: str = "customer_otp",
     ) -> dict[str, Any]:
         user_id = customer.get("user_id")
         resolved = customer.get("phone") or ""
@@ -175,7 +195,7 @@ class CustomerAuthService:
             with atomic() as conn:
                 otp_repository.mark_verified(int(otp_row["otp_id"]), conn=conn)
 
-        self._record_login(request, user_id)
+        self._record_login(request, user_id, login_type=login_type)
 
         return {
             "user": self._serialize_customer(customer),
@@ -248,7 +268,55 @@ class CustomerAuthService:
             "email": customer_email,
         }
 
-    def _record_login(self, request: HttpRequest, user_id: Optional[int]) -> None:
+    def _create_customer_for_google(
+        self,
+        *,
+        email: str,
+        full_name: str,
+    ) -> dict[str, Any]:
+        display_name = full_name.strip() or email.split("@")[0]
+        with atomic() as conn:
+            role_id = self._get_customer_role_id(conn)
+            user_rows = execute(
+                f"""
+                INSERT INTO {self.schema}.usertbl
+                    (role_id, email, phone, password_hash, full_name, email_verified, is_active)
+                VALUES (%s, %s, %s, %s, %s, TRUE, TRUE)
+                RETURNING user_id
+                """,
+                [role_id, email, "NA", "!", display_name],
+                conn=conn,
+                fetch=True,
+            )
+            user_id = int(user_rows[0]["user_id"])
+            cust_rows = execute(
+                f"""
+                INSERT INTO {self.schema}.customertbl
+                    (user_id, email, phone, full_name, is_guest, is_active)
+                VALUES (%s, %s, %s, %s, FALSE, TRUE)
+                RETURNING customer_id
+                """,
+                [user_id, email, "NA", display_name],
+                conn=conn,
+                fetch=True,
+            )
+            customer_id = int(cust_rows[0]["customer_id"])
+        customer = customer_repository.fetch_by_id(customer_id)
+        return customer or {
+            "customer_id": customer_id,
+            "user_id": user_id,
+            "phone": "NA",
+            "full_name": display_name,
+            "email": email,
+        }
+
+    def _record_login(
+        self,
+        request: HttpRequest,
+        user_id: Optional[int],
+        *,
+        login_type: str = "customer_otp",
+    ) -> None:
         if not user_id:
             return
         try:
@@ -256,7 +324,7 @@ class CustomerAuthService:
 
             login_history_repository.record(
                 user_id=user_id,
-                login_type="customer_otp",
+                login_type=login_type,
                 status="success",
                 ip_address=get_client_ip(request),
                 user_agent=request.META.get("HTTP_USER_AGENT", "unknown")[:500],

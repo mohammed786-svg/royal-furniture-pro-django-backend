@@ -115,6 +115,9 @@ class CartService:
             return self._serialize_cart(cart, items)
 
     def add_item(self, request: HttpRequest, payload: dict[str, Any]) -> dict[str, Any]:
+        from apps.storefront.helpers.commerce_context import require_customer_id
+
+        customer_id = require_customer_id(request)
         product_id = _optional_int(payload.get("productId"))
         if not product_id:
             raise ValidationException(
@@ -129,7 +132,6 @@ class CartService:
         unit_price = float(product.get("sale_price") or product.get("base_price") or 0)
         line_total = unit_price * quantity
 
-        customer_id = resolve_customer_id(request)
         session_id = resolve_guest_session(request) or "guest"
 
         with atomic() as conn:

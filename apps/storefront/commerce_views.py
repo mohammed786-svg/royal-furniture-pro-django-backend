@@ -76,6 +76,24 @@ class StorefrontVerifyOtpView(APIView):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
+class StorefrontGoogleAuthView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request: Request):
+        id_token = request.data.get("idToken", "")
+        session_id = resolve_guest_session(request)
+        data = customer_auth_service.verify_google_sign_in(request, id_token)
+        if session_id and data.get("user", {}).get("customerId"):
+            cart_service.merge_guest_cart(
+                int(data["user"]["customerId"]),
+                session_id,
+            )
+        response = APIResponse.success(data=data, message="Login successful", endpoint=request.path)
+        return _with_guest_session(response, session_id)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
 class StorefrontMeView(APIView):
     authentication_classes = []
     permission_classes = []
