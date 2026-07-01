@@ -43,7 +43,7 @@ def get_connection_pool(alias: str = "default", minconn: int = 2, maxconn: int =
                 maxconn=maxconn,
                 cursor_factory=RealDictCursor,
                 **{k: v for k, v in cfg.items() if k != "options"},
-                options=cfg.get("options") or f"-c search_path={settings.DB_SCHEMA},public -c timezone=Asia/Kolkata",
+                options=cfg.get("options") or f"-c search_path={settings.DB_SCHEMA},public -c timezone=UTC",
             )
             logger.info("Initialized connection pool: %s", alias)
         return _pools[alias]

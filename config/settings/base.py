@@ -149,7 +149,7 @@ DATABASES = {
         "PORT": os.getenv("DB_PORT", "6432"),
         "CONN_MAX_AGE": 0,
         "OPTIONS": {
-            "options": f"-c search_path={DB_SCHEMA},public -c timezone=Asia/Kolkata",
+            "options": f"-c search_path={DB_SCHEMA},public -c timezone=UTC",
         },
     },
 }
