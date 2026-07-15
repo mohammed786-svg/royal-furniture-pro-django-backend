@@ -88,6 +88,78 @@ def _order_package_metrics(items: list[dict[str, Any]]) -> tuple[float, float, f
     return total_weight, max_length, max_breadth, max_height
 
 
+def _shiprocket_gst_percent(item: dict[str, Any]) -> float:
+    """Shiprocket `tax` must be GST rate (%), not rupee tax amount."""
+    gst = _safe_float(item.get("product_gst_percent"))
+    if gst > 0:
+        return round(gst, 2)
+    qty = max(1, int(item.get("quantity") or 1))
+    taxable = max(0.0, _safe_float(item.get("unit_price")) * qty - _safe_float(item.get("discount_amount")))
+    tax_amt = _safe_float(item.get("tax_amount"))
+    if taxable > 0 and tax_amt > 0:
+        return round((tax_amt / taxable) * 100, 2)
+    return 18.0
+
+
+def _shiprocket_order_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Build Shiprocket order_items.
+
+    Shiprocket expects:
+    - selling_price: GST-inclusive unit price
+    - tax: GST percentage (e.g. 18), not absolute tax in ₹
+    """
+    order_items: list[dict[str, Any]] = []
+    for item in items:
+        qty = max(1, int(item.get("quantity") or 1))
+        unit_excl = _safe_float(item.get("unit_price"))
+        discount = _safe_float(item.get("discount_amount"))
+        tax_amt = _safe_float(item.get("tax_amount"))
+        line_total = _safe_float(item.get("line_total"))
+        if line_total <= 0:
+            line_total = max(0.0, unit_excl * qty - discount + tax_amt)
+        # Inclusive unit price so invoice total matches store grand total (taxable + GST).
+        selling_price = round(line_total / qty, 2)
+        product_name = from_db_text(item.get("product_name")) or "Product"
+        variant_name = from_db_text(item.get("variant_name")) or ""
+        if variant_name:
+            product_name = f"{product_name} - {variant_name}"
+        order_items.append(
+            {
+                "name": product_name[:200],
+                "sku": from_db_text(item.get("sku")) or f"SKU-{item.get('product_id') or 'X'}",
+                "units": qty,
+                "selling_price": selling_price,
+                "discount": 0,
+                "tax": _shiprocket_gst_percent(item),
+                "hsn": _parse_hsn(item.get("hsn_code") or item.get("product_hsn_code")),
+            }
+        )
+    return order_items
+
+
+def _shiprocket_sub_total(order: dict[str, Any], order_items: list[dict[str, Any]]) -> float:
+    """
+    Item subtotal including GST (excludes shipping).
+
+    Shiprocket: Order Value = sub_total + shipping_charges − discounts.
+    """
+    from_items = sum(
+        _safe_float(i.get("selling_price")) * int(i.get("units") or 1) for i in order_items
+    )
+    if from_items > 0:
+        return round(from_items, 2)
+    total = _safe_float(order.get("total_amount"))
+    shipping = _safe_float(order.get("shipping_amount"))
+    if total > 0:
+        return round(max(0.0, total - shipping), 2)
+    # Last resort: exclusive subtotal + tax
+    return round(
+        _safe_float(order.get("subtotal")) + _safe_float(order.get("tax_amount")),
+        2,
+    )
+
+
 class ShiprocketIntegrationService:
     def __init__(self, client: ShiprocketClient | None = None) -> None:
         self.client = client or shiprocket_client
@@ -313,20 +385,7 @@ class ShiprocketIntegrationService:
         country = from_db_text(address.get("country")) or "India"
 
         warehouse = self._warehouse_return_address()
-        order_items = []
-        for item in items:
-            unit_price = _safe_float(item.get("unit_price"))
-            order_items.append(
-                {
-                    "name": from_db_text(item.get("product_name")) or "Product",
-                    "sku": from_db_text(item.get("sku")) or f"SKU-{item['product_id']}",
-                    "units": int(item.get("quantity") or 1),
-                    "selling_price": unit_price,
-                    "discount": _safe_float(item.get("discount_amount")),
-                    "tax": _safe_float(item.get("tax_amount")),
-                    "hsn": _parse_hsn(item.get("hsn_code")),
-                }
-            )
+        order_items = _shiprocket_order_items(items)
 
         pkg_weight, pkg_length, pkg_breadth, pkg_height = _order_package_metrics(items)
         weight = pkg_weight or float(getattr(settings, "SHIPROCKET_DEFAULT_WEIGHT_KG", 1.0))
@@ -360,7 +419,7 @@ class ShiprocketIntegrationService:
             "shipping_phone": warehouse["phone"],
             "order_items": order_items,
             "payment_method": "Prepaid",
-            "sub_total": float(order.get("subtotal") or 0),
+            "sub_total": _shiprocket_sub_total(order, order_items),
             "length": length,
             "breadth": breadth,
             "height": height,
@@ -411,22 +470,8 @@ class ShiprocketIntegrationService:
         pincode = from_db_text(address.get("pincode")) or ""
         country = from_db_text(address.get("country")) or "India"
 
-        order_items = []
-        for item in items:
-            unit_price = _safe_float(item.get("unit_price"))
-            order_items.append(
-                {
-                    "name": from_db_text(item.get("product_name")) or "Product",
-                    "sku": from_db_text(item.get("sku")) or f"SKU-{item['product_id']}",
-                    "units": int(item.get("quantity") or 1),
-                    "selling_price": unit_price,
-                    "discount": _safe_float(item.get("discount_amount")),
-                    "tax": _safe_float(item.get("tax_amount")),
-                    "hsn": _parse_hsn(item.get("hsn_code")),
-                }
-            )
-
-        sub_total = float(order.get("subtotal") or 0)
+        order_items = _shiprocket_order_items(items)
+        sub_total = _shiprocket_sub_total(order, order_items)
         created = order.get("created_at")
         if isinstance(created, datetime):
             order_date = created.strftime("%Y-%m-%d %H:%M")
@@ -440,6 +485,9 @@ class ShiprocketIntegrationService:
         breadth = pkg_breadth or float(getattr(settings, "SHIPROCKET_DEFAULT_BREADTH_CM", 10))
         height = pkg_height or float(getattr(settings, "SHIPROCKET_DEFAULT_HEIGHT_CM", 10))
         weight = max(0.1, weight)
+
+        payment_raw = (from_db_text(order.get("payment_method")) or "").upper()
+        payment_method = "COD" if payment_raw == "COD" else "Prepaid"
 
         return {
             "order_id": order_number[:50],
@@ -457,7 +505,11 @@ class ShiprocketIntegrationService:
             "billing_phone": phone,
             "shipping_is_billing": True,
             "order_items": order_items,
-            "payment_method": "Prepaid",
+            "payment_method": payment_method,
+            "shipping_charges": _safe_float(order.get("shipping_amount")),
+            "giftwrap_charges": 0,
+            "transaction_charges": 0,
+            "total_discount": 0,
             "sub_total": sub_total,
             "length": length,
             "breadth": breadth,
