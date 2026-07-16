@@ -254,7 +254,7 @@ class ProductRepository:
                  is_featured, is_new_arrival, is_best_seller, is_trending, is_active)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s)
+                    %s, %s, %s, %s)
             RETURNING product_id
         """
         if conn is not None:
