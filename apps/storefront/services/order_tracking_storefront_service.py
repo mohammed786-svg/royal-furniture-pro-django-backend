@@ -159,6 +159,14 @@ class StorefrontOrderTrackingService:
                     "unitPrice": float(item.get("unit_price") or 0),
                     "lineTotal": float(item.get("line_total") or 0),
                     "sku": from_db_text(item.get("sku")) or "",
+                    "productId": str(item["product_id"]) if item.get("product_id") else None,
+                    "productSlug": from_db_text(item.get("product_slug")) or "",
+                    "imageUrl": from_db_text(item.get("product_image_url")) or "",
+                    "href": (
+                        f"/product/{from_db_text(item.get('product_slug'))}"
+                        if from_db_text(item.get("product_slug"))
+                        else ""
+                    ),
                 }
                 for item in items
             ],

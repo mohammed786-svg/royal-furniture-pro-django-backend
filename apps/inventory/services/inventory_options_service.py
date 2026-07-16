@@ -20,16 +20,29 @@ class InventoryOptionsService:
         ]
 
         products_sql = f"""
-            SELECT product_id, name, sku
-            FROM {self.schema}.producttbl
-            WHERE is_deleted = FALSE AND is_active = TRUE
-            ORDER BY name
+            SELECT
+                p.product_id,
+                p.name,
+                p.sku,
+                (
+                    SELECT pi.image_url
+                    FROM {self.schema}.product_imagestbl pi
+                    WHERE pi.product_id = p.product_id
+                      AND pi.is_deleted = FALSE
+                      AND pi.is_active = TRUE
+                    ORDER BY pi.is_primary DESC, pi.display_order ASC
+                    LIMIT 1
+                ) AS primary_image_url
+            FROM {self.schema}.producttbl p
+            WHERE p.is_deleted = FALSE AND p.is_active = TRUE
+            ORDER BY p.name
         """
         products = [
             {
                 "id": str(p["product_id"]),
                 "name": from_db_text(p.get("name")) or "",
                 "sku": from_db_text(p.get("sku")) or "",
+                "imageUrl": from_db_text(p.get("primary_image_url")) or "",
             }
             for p in select_query(products_sql)
         ]

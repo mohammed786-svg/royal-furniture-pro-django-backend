@@ -16,7 +16,17 @@ class OrderItemRepository:
         sql = f"""
             SELECT
                 oi.*,
-                p.gst_percent AS product_gst_percent
+                p.gst_percent AS product_gst_percent,
+                p.slug AS product_slug,
+                (
+                    SELECT pi.image_url
+                    FROM {self.schema}.product_imagestbl pi
+                    WHERE pi.product_id = p.product_id
+                      AND pi.is_deleted = FALSE
+                      AND pi.is_active = TRUE
+                    ORDER BY pi.is_primary DESC, pi.display_order ASC
+                    LIMIT 1
+                ) AS product_image_url
             FROM {self.schema}.{self.table} oi
             LEFT JOIN {self.schema}.producttbl p ON p.product_id = oi.product_id
             WHERE oi.order_id = %s AND oi.is_deleted = FALSE
