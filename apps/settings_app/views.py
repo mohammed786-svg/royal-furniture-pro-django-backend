@@ -6,6 +6,9 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
+from apps.settings_app.services.checkout_payment_settings_service import (
+    checkout_payment_settings_service,
+)
 from apps.settings_app.services.setting_service import setting_service
 from core.exceptions.base import AuthenticationException
 from core.pagination import PaginationParams
@@ -31,6 +34,31 @@ def _list_params(request: Request) -> dict:
         "sort_by": request.query_params.get("sortBy", "setting_key"),
         "sort_dir": request.query_params.get("sortDir", "asc"),
     }
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class CheckoutPaymentSettingsView(APIView):
+    """Admin: manage checkout QR + bank details shown on /checkout/payment."""
+
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request: Request):
+        _require_admin(request)
+        data = checkout_payment_settings_service.get_instructions()
+        return APIResponse.success(data=data, endpoint=request.path)
+
+    def put(self, request: Request):
+        _require_admin(request)
+        data = checkout_payment_settings_service.update_instructions(request.data or {})
+        return APIResponse.success(
+            data=data,
+            message="Checkout payment details updated",
+            endpoint=request.path,
+        )
+
+    def patch(self, request: Request):
+        return self.put(request)
 
 
 @method_decorator(csrf_exempt, name="dispatch")

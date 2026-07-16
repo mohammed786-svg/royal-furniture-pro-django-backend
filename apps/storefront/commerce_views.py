@@ -343,6 +343,14 @@ class StorefrontCheckoutView(APIView):
     authentication_classes = []
     permission_classes = []
 
+    def get(self, request: Request):
+        from apps.settings_app.services.checkout_payment_settings_service import (
+            checkout_payment_settings_service,
+        )
+
+        data = checkout_payment_settings_service.get_instructions()
+        return APIResponse.success(data=data, endpoint=request.path)
+
     def post(self, request: Request):
         data = checkout_service.place_order(request, request.data)
         return APIResponse.success(data=data, message="Order placed", endpoint=request.path)

@@ -77,6 +77,60 @@ class SettingRepository:
             params.append(exclude_id)
         return select_one(sql, params) is not None
 
+    def fetch_by_key(self, key: str) -> Optional[dict[str, Any]]:
+        sql = f"""
+            SELECT *
+            FROM {self.schema}.{self.table}
+            WHERE setting_key = %s AND is_deleted = FALSE
+            LIMIT 1
+        """
+        return select_one(sql, [key])
+
+    def list_by_group(self, group: str) -> list[dict[str, Any]]:
+        sql = f"""
+            SELECT *
+            FROM {self.schema}.{self.table}
+            WHERE is_deleted = FALSE
+              AND is_active = TRUE
+              AND setting_group = %s
+            ORDER BY setting_key ASC
+        """
+        return select_query(sql, [group])
+
+    def upsert_by_key(
+        self,
+        *,
+        key: str,
+        value: str,
+        group: str,
+        value_type: str = "TEXT",
+        description: str = "",
+    ) -> dict[str, Any]:
+        existing = self.fetch_by_key(key)
+        if existing:
+            row = self.update(
+                int(existing["setting_id"]),
+                {
+                    "setting_value": value,
+                    "setting_group": group,
+                    "value_type": value_type,
+                    "description": description,
+                    "is_active": True,
+                },
+            )
+            return row or existing
+        return self.create(
+            {
+                "setting_key": key,
+                "setting_value": value,
+                "setting_group": group,
+                "value_type": value_type,
+                "is_encrypted": False,
+                "description": description,
+                "is_active": True,
+            }
+        )
+
     def create(self, data: dict[str, Any]) -> dict[str, Any]:
         sql = f"""
             INSERT INTO {self.schema}.{self.table}

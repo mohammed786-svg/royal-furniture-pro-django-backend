@@ -68,6 +68,15 @@ class CheckoutService:
                 details=[{"field": "transactionRef", "message": "Payment reference is required"}]
             )
 
+        screenshot = payload.get("screenshot") or payload.get("screenshotUrl")
+        if not screenshot or not str(screenshot).strip() or str(screenshot).strip().upper() == "NA":
+            raise ValidationException(
+                details=[{
+                    "field": "screenshot",
+                    "message": "Payment screenshot is required before placing the order",
+                }]
+            )
+
         method_key = (payload.get("paymentMethod") or "upi_qr").strip().lower()
         payment_method = PAYMENT_METHOD_MAP.get(method_key, method_key.upper())
 
@@ -167,13 +176,18 @@ class CheckoutService:
 
             screenshot = payload.get("screenshot") or payload.get("screenshotUrl")
             screenshot_url = "NA"
-            if screenshot:
-                if isinstance(screenshot, str) and screenshot.startswith(("http://", "https://", "/")):
-                    screenshot_url = screenshot
-                else:
-                    saved = save_base64_image(str(screenshot), subdir="payments", prefix=f"order-{order_id}")
-                    if saved:
-                        screenshot_url = saved
+            if isinstance(screenshot, str) and screenshot.startswith(("http://", "https://", "/")):
+                screenshot_url = screenshot
+            else:
+                saved = save_base64_image(str(screenshot), subdir="payments", prefix=f"order-{order_id}")
+                if not saved:
+                    raise ValidationException(
+                        details=[{
+                            "field": "screenshot",
+                            "message": "Could not save payment screenshot. Please upload again.",
+                        }]
+                    )
+                screenshot_url = saved
 
             payment_verification_repository.create(
                 {
