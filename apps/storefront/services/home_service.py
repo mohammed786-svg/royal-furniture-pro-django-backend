@@ -8,6 +8,7 @@ from apps.marketing.services.storefront_banner_service import storefront_banner_
 from apps.storefront.repositories.home_repository import storefront_home_repository
 from core.cache.cache_keys import CacheKeys
 from core.cache.cache_manager import cache_manager
+from core.exceptions.base import NotFoundException
 from core.helpers.text import from_db_text
 
 HOME_CACHE_TTL = 3600
@@ -44,7 +45,9 @@ def _serialize_product(row: dict[str, Any]) -> dict[str, Any]:
     mrp = float(row.get("mrp") or 0)
     price = sale_price if sale_price > 0 else base_price
     slug = from_db_text(row.get("slug")) or ""
-    return {
+    category_slug = from_db_text(row.get("category_slug")) or ""
+    sub_slug = from_db_text(row.get("sub_category_slug")) or ""
+    payload = {
         "id": str(row["product_id"]),
         "name": from_db_text(row.get("name")) or "",
         "slug": slug,
@@ -56,6 +59,14 @@ def _serialize_product(row: dict[str, Any]) -> dict[str, Any]:
         "badge": _product_badge(row),
         "discount": _calc_discount(price, mrp),
     }
+    if category_slug or row.get("category_name"):
+        payload["categoryId"] = str(row["category_id"]) if row.get("category_id") else None
+        payload["categoryName"] = from_db_text(row.get("category_name")) or "Furniture"
+        payload["categorySlug"] = category_slug
+        payload["categoryHref"] = f"/{category_slug}" if category_slug else "#"
+        payload["subCategoryName"] = from_db_text(row.get("sub_category_name")) or ""
+        payload["subCategorySlug"] = sub_slug
+    return payload
 
 
 def _serialize_category(row: dict[str, Any], *, sub: bool = False) -> dict[str, Any]:
@@ -210,6 +221,53 @@ class StorefrontHomeService:
             return cached
         cache_manager.set(CacheKeys.storefront_home(), fresh, ttl=HOME_CACHE_TTL)
         return fresh
+
+    def get_collection(self, kind: str) -> dict[str, Any]:
+        """Full New Arrivals / Online Exclusive listing, grouped by category."""
+        kind = (kind or "").strip().lower().replace("_", "-")
+        configs = {
+            "new-arrivals": {
+                "title": "New Arrivals",
+                "description": "Browse all new arrival furniture, organised by category.",
+                "filters": {"is_new_arrival": True},
+            },
+            "online-exclusive": {
+                "title": "Online Exclusive",
+                "description": "Shop online-exclusive furniture, organised by category.",
+                "filters": {"is_featured": True},
+            },
+        }
+        config = configs.get(kind)
+        if not config:
+            raise NotFoundException("Collection not found")
+
+        rows = storefront_home_repository.list_storefront_products(
+            limit=240,
+            **config["filters"],
+        )
+        groups_map: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            product = _serialize_product(row)
+            cat_key = product.get("categorySlug") or product.get("categoryName") or "other"
+            if cat_key not in groups_map:
+                groups_map[cat_key] = {
+                    "categoryId": product.get("categoryId"),
+                    "categoryName": product.get("categoryName") or "Furniture",
+                    "categorySlug": product.get("categorySlug") or "",
+                    "categoryHref": product.get("categoryHref") or "#",
+                    "products": [],
+                }
+            groups_map[cat_key]["products"].append(product)
+
+        groups = list(groups_map.values())
+        total = sum(len(g["products"]) for g in groups)
+        return {
+            "kind": kind,
+            "title": config["title"],
+            "description": config["description"],
+            "totalProducts": total,
+            "groups": groups,
+        }
 
     def invalidate_homepage_cache(self) -> None:
         cache_manager.delete(CacheKeys.storefront_home())

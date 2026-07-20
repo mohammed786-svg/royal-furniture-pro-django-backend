@@ -35,6 +35,21 @@ class StorefrontHomeView(APIView):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
+class StorefrontCollectionView(APIView):
+    """Public collection PLP: new-arrivals | online-exclusive (grouped by category)."""
+
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request: Request, kind: str):
+        try:
+            data = storefront_home_service.get_collection(kind)
+            return APIResponse.success(data=data, endpoint=request.path)
+        except NotFoundException as exc:
+            return APIResponse.error(message=str(exc), status_code=404, endpoint=request.path)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
 class StorefrontCategoryListingView(APIView):
     """Public PLP for category + sub-category slugs."""
 

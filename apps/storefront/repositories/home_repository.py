@@ -106,6 +106,12 @@ class StorefrontHomeRepository:
                 p.is_new_arrival,
                 p.is_best_seller,
                 p.is_trending,
+                c.category_id,
+                c.name AS category_name,
+                c.slug AS category_slug,
+                sc.sub_category_id,
+                sc.name AS sub_category_name,
+                sc.slug AS sub_category_slug,
                 b.name AS brand_name,
                 (
                     SELECT pi.image_url
@@ -118,9 +124,10 @@ class StorefrontHomeRepository:
                 ) AS primary_image_url
             FROM {self.schema}.producttbl p
             INNER JOIN {self.schema}.categorytbl c ON c.category_id = p.category_id
+            LEFT JOIN {self.schema}.sub_categorytbl sc ON sc.sub_category_id = p.sub_category_id
             LEFT JOIN {self.schema}.brandtbl b ON b.brand_id = p.brand_id
             WHERE {where}
-            ORDER BY p.updated_at DESC, p.product_id DESC
+            ORDER BY c.display_order ASC NULLS LAST, c.name ASC, p.updated_at DESC, p.product_id DESC
             LIMIT %s
         """
         return select_query(sql, [limit])
