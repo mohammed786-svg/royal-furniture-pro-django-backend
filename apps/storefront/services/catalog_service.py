@@ -363,14 +363,13 @@ class StorefrontProductService:
             value = from_db_text(f.get("feature_description")) or ""
             if label or value:
                 features.append({"label": label, "value": value})
+        # Specs are separate key/value rows (no "Group - Key" label).
         for spec in product_child_repository.list_specifications(product_id):
-            group = from_db_text(spec.get("spec_group")) or ""
             key = from_db_text(spec.get("spec_key")) or ""
             value = from_db_text(spec.get("spec_value")) or ""
             if not key and not value:
                 continue
-            label = f"{group} - {key}" if group and group.lower() != "general" else key
-            features.append({"label": label, "value": value})
+            features.append({"label": key, "value": value})
 
         slug_value = from_db_text(row.get("slug")) or slug
         category_slug = from_db_text(row.get("category_slug")) or ""
@@ -418,12 +417,19 @@ class StorefrontProductService:
             "cachedAt": datetime.now(timezone.utc).isoformat(),
         }
 
-    def get_product_by_slug(self, slug: str) -> dict[str, Any]:
+    def get_product_by_slug(self, slug: str, *, use_cache: bool = True) -> dict[str, Any]:
+        fresh = lambda: self._build_product(slug)
+        if not use_cache:
+            return fresh()
         return cache_manager.get_or_set(
             CacheKeys.product(slug),
-            lambda: self._build_product(slug),
+            fresh,
             ttl=CATALOG_CACHE_TTL,
         )
+
+    def invalidate_product_cache(self, slug: str) -> None:
+        if slug:
+            cache_manager.delete(CacheKeys.product(slug))
 
 
 storefront_catalog_service = StorefrontCatalogService()

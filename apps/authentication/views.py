@@ -43,6 +43,7 @@ class AdminLoginView(APIView):
             data={
                 "user": result["user"],
                 "accessToken": result["access_token"],
+                "refreshToken": result["refresh_token"],
                 "expiresInHours": result["expires_in_hours"],
             },
             message="Login successful",
@@ -64,6 +65,7 @@ class AdminRefreshView(APIView):
             data={
                 "user": result["user"],
                 "accessToken": result["access_token"],
+                "refreshToken": result["refresh_token"],
                 "expiresInHours": result["expires_in_hours"],
             },
             message="Token refreshed",
@@ -81,7 +83,7 @@ class AdminLogoutView(APIView):
     def post(self, request: Request):
         auth_header = request.META.get("HTTP_AUTHORIZATION", "")
         access_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else None
-        refresh_token = request.COOKIES.get(REFRESH_COOKIE)
+        refresh_token = request.COOKIES.get(REFRESH_COOKIE) or request.data.get("refreshToken")
         admin_auth_service.logout(request, access_token, refresh_token)
         response = APIResponse.success(
             message="Logged out successfully",

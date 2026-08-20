@@ -457,18 +457,35 @@ class ProductService:
             created = product_repository.create(product_row, conn=conn)
             product_id = int(created["product_id"])
             self._save_children(product_id, payload, conn=conn)
+        from core.cache.product_cache import invalidate_product_cache_by_id
+
+        invalidate_product_cache_by_id(product_id)
         return self.get_product(product_id)
 
     def update_product(self, product_id: int, payload: dict[str, Any]) -> dict[str, Any]:
-        if not product_repository.fetch_by_id(product_id):
+        existing = product_repository.fetch_by_id(product_id)
+        if not existing:
             raise NotFoundException("Product not found")
+        old_slug = from_db_text(existing.get("slug")) or ""
         product_row = self._build_product_row(payload, product_id=product_id)
         with atomic() as conn:
             product_repository.update(product_id, product_row, conn=conn)
             self._save_children(product_id, payload, conn=conn)
+        from core.cache.product_cache import invalidate_product_cache_by_id
+        from core.cache.cache_keys import CacheKeys
+        from core.cache.cache_manager import cache_manager
+
+        invalidate_product_cache_by_id(product_id)
+        # Also drop previous slug key if the slug changed.
+        new_slug = from_db_text(product_row.get("slug")) or ""
+        if old_slug and old_slug != new_slug:
+            cache_manager.delete(CacheKeys.product(old_slug))
         return self.get_product(product_id)
 
     def delete_product(self, product_id: int) -> None:
+        from core.cache.product_cache import invalidate_product_cache_by_id
+
+        invalidate_product_cache_by_id(product_id)
         if not product_repository.soft_delete(product_id):
             raise NotFoundException("Product not found")
 

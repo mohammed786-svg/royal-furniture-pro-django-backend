@@ -103,7 +103,13 @@ class StorefrontProductDetailView(APIView):
 
     def get(self, request: Request, slug: str):
         try:
-            data = storefront_product_service.get_product_by_slug(slug)
+            nocache_raw = request.query_params.get("nocache")
+            nocache = str(nocache_raw or "").strip().lower() in {"1", "true", "yes"}
+            if nocache:
+                storefront_product_service.invalidate_product_cache(slug)
+            data = storefront_product_service.get_product_by_slug(
+                slug, use_cache=not nocache
+            )
             return APIResponse.success(data=data, endpoint=request.path)
         except NotFoundException as exc:
             return APIResponse.error(message=str(exc), status_code=404, endpoint=request.path)
