@@ -18,16 +18,21 @@ class CacheKeys:
         return f"{CacheKeys.PREFIX}:storefront:home"
 
     @staticmethod
+    def storefront_catalog_gen() -> str:
+        return f"{CacheKeys.PREFIX}:storefront:catalog:gen"
+
+    @staticmethod
     def storefront_plp_ids(
         category_id: int,
         sub_category_id: int,
         under_sub_category_id: int,
         page: int,
         sort: str,
+        gen: str = "0",
     ) -> str:
         return (
             f"{CacheKeys.PREFIX}:storefront:plp:id:"
-            f"{category_id}:{sub_category_id}:{under_sub_category_id}:{page}:{sort}"
+            f"{category_id}:{sub_category_id}:{under_sub_category_id}:{page}:{sort}:g{gen}"
         )
 
     @staticmethod
@@ -37,11 +42,12 @@ class CacheKeys:
         page: int,
         sort: str,
         under_slug: str = "",
+        gen: str = "0",
     ) -> str:
         under_part = f":{under_slug}" if under_slug else ""
         return (
             f"{CacheKeys.PREFIX}:storefront:plp:{category_slug}:{sub_slug}"
-            f"{under_part}:{page}:{sort}"
+            f"{under_part}:{page}:{sort}:g{gen}"
         )
 
     @staticmethod

@@ -77,12 +77,20 @@ class StorefrontCategoryListingView(APIView):
             nocache_raw = request.query_params.get("nocache")
             nocache = str(nocache_raw or "").strip().lower() in {"1", "true", "yes"}
             if nocache:
-                from core.cache.product_cache import invalidate_plp_cache_for_category
+                from core.cache.cache_keys import CacheKeys
+                from core.cache.cache_manager import cache_manager
+                from core.cache.product_cache import bump_catalog_generation, invalidate_plp_cache_for_category
 
+                bump_catalog_generation()
                 invalidate_plp_cache_for_category(
                     category_slug=category_slug,
                     sub_category_slug=sub_category_slug,
                 )
+                # Also wipe any legacy PLP keys that predate generation suffixes.
+                cache_manager.delete_pattern(
+                    f"{CacheKeys.PREFIX}:storefront:plp:{category_slug}:{sub_category_slug}*"
+                )
+                cache_manager.delete_pattern(f"{CacheKeys.PREFIX}:storefront:plp:id:*")
             data = storefront_catalog_service.get_category_listing(
                 category_slug,
                 sub_category_slug,

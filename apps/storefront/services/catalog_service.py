@@ -14,7 +14,7 @@ from core.cache.cache_manager import cache_manager
 from core.exceptions.base import NotFoundException
 from core.helpers.text import from_db_text
 
-CATALOG_CACHE_TTL = 1800
+CATALOG_CACHE_TTL = 300
 SORT_OPTIONS = [
     "Recommended",
     "Price: Low to High",
@@ -256,12 +256,15 @@ class StorefrontCatalogService:
         sort: Optional[str] = None,
         use_cache: bool = True,
     ) -> dict[str, Any]:
+        from core.cache.product_cache import bump_catalog_generation, get_catalog_generation
+
         sort_key = self._normalize_sort(sort)
         under_cache_key = (
             str(under_sub_category_id)
             if under_sub_category_id
             else (under_sub_category_slug or "").strip()
         )
+        gen = get_catalog_generation()
 
         def loader() -> dict[str, Any]:
             listing = self._build_listing(
@@ -276,6 +279,7 @@ class StorefrontCatalogService:
                 sort=sort_key,
             )
             if use_cache:
+                active_gen = get_catalog_generation()
                 cache_manager.set(
                     CacheKeys.storefront_plp_ids(
                         int(listing["categoryId"]),
@@ -283,6 +287,19 @@ class StorefrontCatalogService:
                         int(listing["underSubCategoryId"] or 0),
                         page,
                         sort_key,
+                        active_gen,
+                    ),
+                    listing,
+                    ttl=CATALOG_CACHE_TTL,
+                )
+                cache_manager.set(
+                    CacheKeys.storefront_plp(
+                        category_slug,
+                        sub_category_slug,
+                        page,
+                        sort_key,
+                        under_cache_key,
+                        active_gen,
                     ),
                     listing,
                     ttl=CATALOG_CACHE_TTL,
@@ -290,21 +307,12 @@ class StorefrontCatalogService:
             return listing
 
         if not use_cache:
+            # Drop generation + rebuild so the next normal request also misses stale keys.
+            bump_catalog_generation()
             return loader()
 
-        id_cache_key = None
-        if category_id and sub_category_id:
-            id_cache_key = CacheKeys.storefront_plp_ids(
-                category_id,
-                sub_category_id,
-                under_sub_category_id or 0,
-                page,
-                sort_key,
-            )
-            cached = cache_manager.get(id_cache_key)
-            if cached:
-                return cached
-
+        # Prefer slug-based lookup; do not short-circuit on client-provided IDs
+        # (those previously returned a stale parent PLP while under-sub was fresh).
         return cache_manager.get_or_set(
             CacheKeys.storefront_plp(
                 category_slug,
@@ -312,6 +320,7 @@ class StorefrontCatalogService:
                 page,
                 sort_key,
                 under_cache_key,
+                gen,
             ),
             loader,
             ttl=CATALOG_CACHE_TTL,

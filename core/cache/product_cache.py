@@ -1,12 +1,25 @@
 """Invalidate storefront product + category listing caches when catalog changes."""
 from __future__ import annotations
 
+import time
 from typing import Any, Optional
 
 from apps.products.repositories.product_repository import product_repository
 from core.cache.cache_keys import CacheKeys
 from core.cache.cache_manager import cache_manager
 from core.helpers.text import from_db_text
+
+
+def get_catalog_generation() -> str:
+    value = cache_manager.get(CacheKeys.storefront_catalog_gen())
+    return str(value or "0")
+
+
+def bump_catalog_generation() -> str:
+    """Invalidate all PLP caches by rotating the generation suffix in cache keys."""
+    gen = str(int(time.time() * 1000))
+    cache_manager.set(CacheKeys.storefront_catalog_gen(), gen, ttl=60 * 60 * 24 * 30)
+    return gen
 
 
 def invalidate_plp_cache_for_category(
@@ -81,4 +94,6 @@ def invalidate_product_cache_by_id(
                 sub_category_slug=prev_sub_category_slug,
             )
 
+    # Rotate generation so every PLP key (parent + under-sub) misses stale Redis entries.
+    bump_catalog_generation()
     invalidate_storefront_home_cache()
