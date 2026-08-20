@@ -214,8 +214,11 @@ class StorefrontHomeService:
             "cachedAt": datetime.now(timezone.utc).isoformat(),
         }
 
-    def get_homepage(self) -> dict[str, Any]:
+    def get_homepage(self, *, use_cache: bool = True) -> dict[str, Any]:
         fresh = self._build_payload()
+        if not use_cache:
+            return fresh
+
         cached = cache_manager.get(CacheKeys.storefront_home())
         if cached and cached.get("version") == fresh.get("version"):
             return cached

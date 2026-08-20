@@ -357,11 +357,20 @@ class StorefrontProductService:
         if not images:
             images = []
 
-        features = [
-            from_db_text(f.get("feature_title")) or from_db_text(f.get("feature_description")) or ""
-            for f in product_child_repository.list_features(product_id)
-            if from_db_text(f.get("feature_title")) or from_db_text(f.get("feature_description"))
-        ]
+        features: list[dict[str, str]] = []
+        for f in product_child_repository.list_features(product_id):
+            label = from_db_text(f.get("feature_title")) or ""
+            value = from_db_text(f.get("feature_description")) or ""
+            if label or value:
+                features.append({"label": label, "value": value})
+        for spec in product_child_repository.list_specifications(product_id):
+            group = from_db_text(spec.get("spec_group")) or ""
+            key = from_db_text(spec.get("spec_key")) or ""
+            value = from_db_text(spec.get("spec_value")) or ""
+            if not key and not value:
+                continue
+            label = f"{group} - {key}" if group and group.lower() != "general" else key
+            features.append({"label": label, "value": value})
 
         slug_value = from_db_text(row.get("slug")) or slug
         category_slug = from_db_text(row.get("category_slug")) or ""

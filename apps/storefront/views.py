@@ -30,7 +30,14 @@ class StorefrontHomeView(APIView):
     permission_classes = []
 
     def get(self, request: Request):
-        data = storefront_home_service.get_homepage()
+        nocache_raw = request.query_params.get("nocache")
+        nocache = str(nocache_raw or "").strip().lower() in {"1", "true", "yes"}
+
+        # Hard refresh / nocache mode: clear Redis homepage cache first so we rebuild fresh data.
+        if nocache:
+            storefront_home_service.invalidate_homepage_cache()
+
+        data = storefront_home_service.get_homepage(use_cache=not nocache)
         return APIResponse.success(data=data, endpoint=request.path)
 
 
