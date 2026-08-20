@@ -74,6 +74,15 @@ class StorefrontCategoryListingView(APIView):
             page = max(1, int(request.query_params.get("page", 1)))
             page_size = min(48, max(1, int(request.query_params.get("pageSize", 24))))
             sort = request.query_params.get("sort")
+            nocache_raw = request.query_params.get("nocache")
+            nocache = str(nocache_raw or "").strip().lower() in {"1", "true", "yes"}
+            if nocache:
+                from core.cache.product_cache import invalidate_plp_cache_for_category
+
+                invalidate_plp_cache_for_category(
+                    category_slug=category_slug,
+                    sub_category_slug=sub_category_slug,
+                )
             data = storefront_catalog_service.get_category_listing(
                 category_slug,
                 sub_category_slug,
@@ -86,6 +95,7 @@ class StorefrontCategoryListingView(APIView):
                 page=page,
                 page_size=page_size,
                 sort=sort,
+                use_cache=not nocache,
             )
             return APIResponse.success(data=data, endpoint=request.path)
         except NotFoundException as exc:

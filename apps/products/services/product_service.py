@@ -475,7 +475,7 @@ class ProductService:
         from core.cache.cache_keys import CacheKeys
         from core.cache.cache_manager import cache_manager
 
-        invalidate_product_cache_by_id(product_id)
+        invalidate_product_cache_by_id(product_id, previous_row=existing)
         # Also drop previous slug key if the slug changed.
         new_slug = from_db_text(product_row.get("slug")) or ""
         if old_slug and old_slug != new_slug:
@@ -485,7 +485,10 @@ class ProductService:
     def delete_product(self, product_id: int) -> None:
         from core.cache.product_cache import invalidate_product_cache_by_id
 
-        invalidate_product_cache_by_id(product_id)
+        existing = product_repository.fetch_by_id(product_id)
+        if not existing:
+            raise NotFoundException("Product not found")
+        invalidate_product_cache_by_id(product_id, previous_row=existing)
         if not product_repository.soft_delete(product_id):
             raise NotFoundException("Product not found")
 

@@ -114,8 +114,11 @@ class ProductRepository:
             SELECT
                 p.*,
                 c.name AS category_name,
+                c.slug AS category_slug,
                 sc.name AS sub_category_name,
+                sc.slug AS sub_category_slug,
                 usc.name AS under_sub_category_name,
+                usc.slug AS under_sub_category_slug,
                 b.name AS brand_name
             FROM {self.schema}.{self.table} p
             INNER JOIN {self.schema}.categorytbl c ON c.category_id = p.category_id

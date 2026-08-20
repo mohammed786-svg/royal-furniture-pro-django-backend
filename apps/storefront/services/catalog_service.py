@@ -254,6 +254,7 @@ class StorefrontCatalogService:
         page: int = 1,
         page_size: int = 24,
         sort: Optional[str] = None,
+        use_cache: bool = True,
     ) -> dict[str, Any]:
         sort_key = self._normalize_sort(sort)
         under_cache_key = (
@@ -274,18 +275,22 @@ class StorefrontCatalogService:
                 page_size=page_size,
                 sort=sort_key,
             )
-            cache_manager.set(
-                CacheKeys.storefront_plp_ids(
-                    int(listing["categoryId"]),
-                    int(listing["subCategoryId"]),
-                    int(listing["underSubCategoryId"] or 0),
-                    page,
-                    sort_key,
-                ),
-                listing,
-                ttl=CATALOG_CACHE_TTL,
-            )
+            if use_cache:
+                cache_manager.set(
+                    CacheKeys.storefront_plp_ids(
+                        int(listing["categoryId"]),
+                        int(listing["subCategoryId"]),
+                        int(listing["underSubCategoryId"] or 0),
+                        page,
+                        sort_key,
+                    ),
+                    listing,
+                    ttl=CATALOG_CACHE_TTL,
+                )
             return listing
+
+        if not use_cache:
+            return loader()
 
         id_cache_key = None
         if category_id and sub_category_id:
